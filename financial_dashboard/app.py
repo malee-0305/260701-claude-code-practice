@@ -703,9 +703,10 @@ def _krx_worker(start_date: str, end_date: str):
             val = 0.0
             for mkt in [_nxt_data["kospi"], _nxt_data["kosdaq"]]:
                 if key_label == "전체":
-                    # 모든 투자자 합산
+                    # 기관종합은 하위 항목(금융투자+보험+투신 등)의 합계이므로 제외해 이중계산 방지
                     for k in mkt:
-                        val += mkt[k]["매도"] + mkt[k]["매수"]
+                        if "기관종합" not in k:
+                            val += mkt[k]["매도"] + mkt[k]["매수"]
                 elif key_label == "기관":
                     val += nxt_get(mkt, "기타", "기관종합")
                 elif key_label == "개인":
