@@ -661,12 +661,16 @@ def _krx_worker(start_date: str, end_date: str):
 
         # NXT 투자자별 합산 헬퍼 (기타+기관종합=기관, 전체=기타+개인+기관종합+외국인)
         def nxt_get(mkt_dict, *keys):
-            """mkt_dict에서 여러 키를 매칭해 매도+매수 합산(원)"""
+            """mkt_dict에서 여러 키를 매칭해 매도+매수 합산(원). 정확한 키 우선, 그 다음 부분 매칭."""
             total = 0.0
             for k in keys:
-                matched = next((dk for dk in mkt_dict if k in dk), None)
-                if matched:
-                    total += mkt_dict[matched]["매도"] + mkt_dict[matched]["매수"]
+                if k in mkt_dict:
+                    # 정확한 키 매칭 (예: "기타" → "기타"만, "기타외국인" 제외)
+                    total += mkt_dict[k]["매도"] + mkt_dict[k]["매수"]
+                else:
+                    matched = next((dk for dk in mkt_dict if k in dk), None)
+                    if matched:
+                        total += mkt_dict[matched]["매도"] + mkt_dict[matched]["매수"]
             return total
 
         def build_nxt_from_upload(market_dict):
