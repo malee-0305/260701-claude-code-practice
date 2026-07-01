@@ -17,99 +17,83 @@
     header {
       background: #1a365d;
       color: #fff;
-      padding: 20px 32px;
+      padding: 18px 28px;
       display: flex;
       align-items: center;
-      gap: 20px;
+      gap: 16px;
       flex-wrap: wrap;
     }
 
-    header h1 { font-size: 1.4rem; font-weight: 700; flex: 1; }
+    header h1 { font-size: 1.3rem; font-weight: 700; flex: 1; }
 
-    .date-form {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
+    .date-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
     .date-form input[type="date"] {
-      padding: 9px 14px;
+      padding: 8px 12px;
       border: none;
-      border-radius: 8px;
+      border-radius: 7px;
       font-size: 0.95rem;
-      cursor: pointer;
     }
 
-    .date-form button {
-      padding: 9px 22px;
-      background: #4299e1;
-      color: #fff;
+    .btn {
+      padding: 8px 20px;
       border: none;
-      border-radius: 8px;
-      font-size: 0.95rem;
+      border-radius: 7px;
+      font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.2s;
     }
 
-    .date-form button:hover:not(:disabled) { background: #3182ce; }
-    .date-form button:disabled { background: #a0aec0; cursor: not-allowed; }
+    .btn-primary { background: #4299e1; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #3182ce; }
+    .btn-primary:disabled { background: #a0aec0; cursor: not-allowed; }
+    .btn-success { background: #38a169; color: #fff; }
+    .btn-success:hover { background: #2f855a; }
 
-    #spinner {
-      display: none;
-      color: #90cdf4;
-      font-size: 0.9rem;
-      align-items: center;
-      gap: 8px;
-    }
-
+    #spinner { display: none; color: #90cdf4; font-size: 0.88rem; align-items: center; gap: 8px; }
     #spinner.active { display: flex; }
-
-    .spin {
-      width: 18px; height: 18px;
-      border: 3px solid #90cdf4;
-      border-top-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
+    .spin { width: 16px; height: 16px; border: 2px solid #90cdf4; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    main {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 28px 20px;
+    main { max-width: 1440px; margin: 0 auto; padding: 24px 18px; }
+
+    #welcome { text-align: center; padding: 80px 20px; color: #718096; }
+    #welcome svg { width: 60px; height: 60px; margin-bottom: 14px; opacity: 0.35; }
+
+    /* KRX 로그인 패널 */
+    #krx-login-panel {
+      display: none;
+      background: #fffbeb;
+      border: 2px solid #f6ad55;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      display: none;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
     }
 
-    #welcome {
-      text-align: center;
-      padding: 80px 20px;
-      color: #718096;
-    }
+    #krx-login-panel.visible { display: flex; }
 
-    #welcome svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.4; }
-    #welcome p  { font-size: 1.05rem; }
+    .krx-login-text { flex: 1; }
+    .krx-login-text strong { color: #c05621; display: block; margin-bottom: 4px; }
+    .krx-login-text span { font-size: 0.88rem; color: #744210; }
 
     .grid {
       display: grid;
-      gap: 20px;
+      gap: 18px;
       grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
     }
 
-    .card {
-      background: #fff;
-      border-radius: 14px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
-      overflow: hidden;
-    }
-
+    .card { background: #fff; border-radius: 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); overflow: hidden; }
     .card.wide { grid-column: 1 / -1; }
 
     .card-header {
-      padding: 14px 20px;
+      padding: 13px 18px;
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -122,53 +106,47 @@
     .card-header.orange { background: #c05621; }
     .card-header.teal   { background: #285e61; }
 
-    .card-body { padding: 16px 20px; overflow-x: auto; }
+    .card-body { padding: 14px 18px; overflow-x: auto; }
 
     .status-badge {
       display: inline-block;
       padding: 2px 8px;
       border-radius: 12px;
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       font-weight: 600;
       margin-left: auto;
     }
 
-    .badge-ok  { background: #c6f6d5; color: #22543d; }
-    .badge-err { background: #fed7d7; color: #742a2a; }
+    .badge-ok      { background: #c6f6d5; color: #22543d; }
+    .badge-err     { background: #fed7d7; color: #742a2a; }
     .badge-loading { background: #bee3f8; color: #2a4365; }
+    .badge-wait    { background: #feebc8; color: #7b341e; }
 
     .error-box {
       padding: 12px;
       background: #fff5f5;
       border-left: 4px solid #fc8181;
       border-radius: 4px;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       color: #742a2a;
       white-space: pre-wrap;
+      word-break: break-all;
     }
 
-    table.data-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.82rem;
-    }
-
+    table.data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
     table.data-table th,
     table.data-table td {
-      padding: 7px 12px;
+      padding: 6px 11px;
       text-align: right;
       border-bottom: 1px solid #edf2f7;
       white-space: nowrap;
     }
-
     table.data-table th { font-weight: 700; background: #f7fafc; text-align: center; }
-
     table.data-table td:first-child,
     table.data-table th:first-child { text-align: left; }
-
     table.data-table tr:hover td { background: #ebf8ff; }
 
-    .note { font-size: 0.78rem; color: #718096; margin-top: 8px; }
+    .note { font-size: 0.76rem; color: #718096; margin-top: 6px; }
   </style>
 </head>
 <body>
@@ -176,9 +154,9 @@
 <header>
   <h1>📊 주요 금융지표 대시보드</h1>
   <div class="date-form">
-    <input type="date" id="dateInput" value="">
-    <button id="fetchBtn" onclick="fetchData()">조회</button>
-    <div id="spinner"><div class="spin"></div> 데이터 수집 중...</div>
+    <input type="date" id="dateInput">
+    <button class="btn btn-primary" id="fetchBtn" onclick="startFetch()">조회</button>
+    <div id="spinner"><div class="spin"></div> 수집 중...</div>
   </div>
 </header>
 
@@ -187,11 +165,21 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
       <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
     </svg>
-    <p>날짜를 선택하고 <strong>조회</strong> 버튼을 클릭하세요.</p>
+    <p style="font-size:1.05rem">날짜를 선택하고 <strong>조회</strong> 버튼을 클릭하세요.</p>
     <p class="note" style="margin-top:8px">KRX · 채권정보센터 · 콜금리 · 환율 · Investing.com 데이터를 수집합니다.</p>
   </div>
 
   <div id="dashboard" style="display:none">
+
+    <!-- KRX 로그인 안내 패널 -->
+    <div id="krx-login-panel">
+      <div class="krx-login-text">
+        <strong>🔐 KRX 로그인이 필요합니다</strong>
+        <span>화면에 열린 Chrome 창에서 KRX 로그인을 완료한 후 아래 버튼을 클릭하세요.</span>
+      </div>
+      <button class="btn btn-success" onclick="krxLoginDone()">✅ 로그인 완료</button>
+    </div>
+
     <div class="grid">
 
       <!-- KRX -->
@@ -200,7 +188,9 @@
           🏦 KRX 시가총액 &amp; 거래대금
           <span id="krx-badge" class="status-badge badge-loading">대기</span>
         </div>
-        <div class="card-body" id="krx-body"></div>
+        <div class="card-body" id="krx-body">
+          <p class="note">조회 버튼 클릭 후 KRX 로그인 완료 버튼을 누르세요.</p>
+        </div>
       </div>
 
       <!-- 채권정보센터 -->
@@ -233,7 +223,7 @@
       <!-- Investing.com -->
       <div class="card wide">
         <div class="card-header teal">
-          🌐 글로벌 지수 &amp; 원자재 (Investing.com)
+          🌐 글로벌 지수 &amp; 금리 &amp; 원자재 (Investing.com)
           <span id="investing-badge" class="status-badge badge-loading">대기</span>
         </div>
         <div class="card-body" id="investing-body"></div>
@@ -250,60 +240,74 @@
   document.getElementById('dateInput').value =
     `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
 
+  let krxPollTimer = null;
+  let currentDate  = '';
+
   function setSection(key, html, err) {
     const body  = document.getElementById(`${key}-body`);
     const badge = document.getElementById(`${key}-badge`);
     if (err) {
-      body.innerHTML  = `<div class="error-box">${err}</div>`;
-      badge.className = 'status-badge badge-err';
+      body.innerHTML   = `<div class="error-box">${err}</div>`;
+      badge.className  = 'status-badge badge-err';
       badge.textContent = '오류';
     } else {
-      body.innerHTML  = html;
-      badge.className = 'status-badge badge-ok';
+      body.innerHTML   = html;
+      badge.className  = 'status-badge badge-ok';
       badge.textContent = '완료';
     }
   }
 
-  async function fetchData() {
+  function setBadge(key, text, cls) {
+    const badge = document.getElementById(`${key}-badge`);
+    badge.className   = `status-badge ${cls}`;
+    badge.textContent = text;
+  }
+
+  async function startFetch() {
     const dateVal = document.getElementById('dateInput').value;
     if (!dateVal) { alert('날짜를 선택해주세요.'); return; }
+    currentDate = dateVal;
 
     document.getElementById('welcome').style.display   = 'none';
     document.getElementById('dashboard').style.display = 'block';
     document.getElementById('fetchBtn').disabled       = true;
     document.getElementById('spinner').classList.add('active');
 
-    // 뱃지 초기화
+    // 초기화
     ['krx','bond','fx','call','investing'].forEach(k => {
-      document.getElementById(`${k}-body`).innerHTML = '<p class="note">수집 중...</p>';
-      const b = document.getElementById(`${k}-badge`);
-      b.className   = 'status-badge badge-loading';
-      b.textContent = '수집 중';
+      const body  = document.getElementById(`${k}-body`);
+      if (k !== 'krx') body.innerHTML = '<p class="note">수집 중...</p>';
+      setBadge(k, '수집 중', 'badge-loading');
     });
+    document.getElementById('krx-login-panel').classList.remove('visible');
 
     try {
+      // ── KRX 브라우저 열기 (비동기) ─────────────────────────────────────
+      setBadge('krx', '브라우저 열기 중', 'badge-loading');
+      await fetch('/api/krx-start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: dateVal })
+      });
+      // 로그인 안내 패널 표시
+      document.getElementById('krx-login-panel').classList.add('visible');
+      setBadge('krx', '로그인 대기', 'badge-wait');
+
+      // ── 나머지 데이터 수집 (동기) ──────────────────────────────────────
       const resp = await fetch('/api/fetch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: dateVal })
       });
       const data = await resp.json();
-
       const r = data.results || {};
       const e = data.errors  || {};
 
-      setSection('krx',       r.krx       || '', e.krx       || (!r.krx ? '데이터 없음' : null));
-      setSection('bond',      r.bond      || '', e.bond      || (!r.bond ? '데이터 없음' : null));
-      setSection('fx',        r.fx        || '', e.fx        || (!r.fx ? '데이터 없음' : null));
-      setSection('call',      r.call      || '', e.call      || (!r.call ? '데이터 없음' : null));
+      setSection('bond',      r.bond      || '', e.bond      || (!r.bond      ? '데이터 없음' : null));
+      setSection('fx',        r.fx        || '', e.fx        || (!r.fx        ? '데이터 없음' : null));
+      setSection('call',      r.call      || '', e.call      || (!r.call      ? '데이터 없음' : null));
       setSection('investing', r.investing || '', e.investing || (!r.investing ? '데이터 없음' : null));
 
-      if (r.krx_date && r.krx_date !== data.date) {
-        document.getElementById('krx-body').insertAdjacentHTML(
-          'beforeend',
-          `<p class="note">* 휴장일로 인해 ${r.krx_date} 기준 데이터 표시</p>`
-        );
-      }
     } catch(err) {
       alert('오류: ' + err.message);
     } finally {
@@ -312,8 +316,33 @@
     }
   }
 
+  async function krxLoginDone() {
+    // 로그인 완료 신호 전송
+    await fetch('/api/krx-continue', { method: 'POST' });
+    document.getElementById('krx-login-panel').classList.remove('visible');
+    setBadge('krx', '데이터 수집 중', 'badge-loading');
+    document.getElementById('krx-body').innerHTML = '<p class="note">KRX 데이터 수집 중... (수 분 소요)</p>';
+
+    // 완료 폴링
+    if (krxPollTimer) clearInterval(krxPollTimer);
+    krxPollTimer = setInterval(async () => {
+      try {
+        const resp = await fetch('/api/krx-result');
+        const data = await resp.json();
+        if (data.done) {
+          clearInterval(krxPollTimer);
+          krxPollTimer = null;
+          setSection('krx', data.data || '', data.error || (!data.data ? '데이터 없음' : null));
+        }
+      } catch(e) {
+        clearInterval(krxPollTimer);
+        setSection('krx', '', '폴링 오류: ' + e.message);
+      }
+    }, 3000);
+  }
+
   document.getElementById('dateInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter') fetchData();
+    if (e.key === 'Enter') startFetch();
   });
 </script>
 </body>
