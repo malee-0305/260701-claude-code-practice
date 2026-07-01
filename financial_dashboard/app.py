@@ -138,145 +138,83 @@ def run_investing(end_date: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. 환율 (SMBS) — requests 직접 파싱
+# 2. 환율 (SMBS) — 원본 스크립트 기반 Selenium
 # ══════════════════════════════════════════════════════════════════════════════
 def run_fx(date: str):
-    import requests, urllib3, pandas as pd
-    from bs4 import BeautifulSoup
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-    # SMBS 기준환율 조회 URL
-    base_url = "http://www.smbs.biz/ExRate/StdExRate.jsp"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": "http://www.smbs.biz/ExRate/StdExRate.jsp",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-
-    currency_map = {
-        "달러(USD)":  "USD",
-        "유로(EUR)":  "EUR",
-        "엔(JPY)":    "JPY",
-        "위안(CNY)":  "CNY",
-        "파운드(GBP)":"GBP",
-    }
-
-    results = []
-    sess = requests.Session()
-
-    for cur_name, cur_code in currency_map.items():
-        chk("fx")
-        try:
-            data = {
-                "gubun": "1",
-                "startDate": date,
-                "endDate": date,
-                "curCd": cur_code,
-            }
-            r = sess.post(base_url, data=data, headers=headers,
-                          verify=False, timeout=15)
-            soup = BeautifulSoup(r.text, "html.parser")
-
-            # 테이블에서 해당 날짜 행 찾기
-            val = None
-            for tbl in soup.find_all("table"):
-                for row in tbl.find_all("tr"):
-                    cols = [td.get_text(strip=True) for td in row.find_all("td")]
-                    if cols and date[:4]+"."+date[4:6]+"."+date[6:8] in " ".join(cols):
-                        # 첫 번째 숫자 컬럼
-                        for c in cols[1:]:
-                            c = c.replace(",","")
-                            try:
-                                val = float(c)
-                                break
-                            except Exception:
-                                pass
-                        if val: break
-                if val: break
-
-            results.append({"통화": cur_name, "값(원)": val})
-        except RuntimeError: raise
-        except Exception as e:
-            results.append({"통화": cur_name, "값(원)": None})
-            print(f"[fx] {cur_name}: {e}")
-
-    import pandas as pd
-    df = pd.DataFrame(results).set_index("통화")
-
-    # 달러/엔, 달러/위안 계산
-    try:
-        usd = df.loc["달러(USD)","값(원)"]
-        cny = df.loc["위안(CNY)","값(원)"]
-        jpy = df.loc["엔(JPY)","값(원)"]
-        if usd and cny and cny != 0:
-            df.loc["위안/달러","값(원)"] = round(usd / cny, 4)
-        if usd and jpy and jpy != 0:
-            df.loc["엔/달러","값(원)"]   = round(usd / (jpy/100), 4)
-    except Exception:
-        pass
-
-    # 값이 전혀 없으면 Selenium 폴백
-    if df["값(원)"].isna().all():
-        return run_fx_selenium(date)
-
-    return df, None
-
-
-def run_fx_selenium(date: str):
-    """SMBS Selenium 폴백"""
     import pandas as pd
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait, Select
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.common.keys import Keys
 
     driver = make_driver(headless=False)
-    wait   = WebDriverWait(driver, 30)
+    wait   = WebDriverWait(driver, 25)
     results = []
 
-    try:
-        driver.get("http://www.smbs.biz/ExRate/StdExRate.jsp")
-        time.sleep(4)
-
-        def js_set(fld_id, val):
+    def set_value_force(el, value):
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            el.click()
+            el.send_keys(Keys.CONTROL, "a")
+            el.send_keys(Keys.DELETE)
+            el.send_keys(value)
+        except Exception:
             driver.execute_script(
-                "var e=document.getElementById(arguments[0]);"
-                "if(e){e.value=arguments[1];"
-                "e.dispatchEvent(new Event('change',{bubbles:true}));}", fld_id, val)
+                "var el=arguments[0],val=arguments[1];"
+                "el.value=val;"
+                "el.dispatchEvent(new Event('input',{bubbles:true}));"
+                "el.dispatchEvent(new Event('change',{bubbles:true}));",
+                el, value)
 
-        js_set("startDate", date)
-        js_set("endDate",   date)
+    select_xpath = '//*[@id="frm_SearchDate"]/div[1]/table/tbody/tr[1]/td/select'
+    search_xpath = '//*[@id="frm_SearchDate"]/p[2]/a[2]/img'
+    rate_xpath   = '//*[@id="frm_SearchDate"]/div[6]/table/tbody/tr/td[1]'
 
-        select_xpath = '//*[@id="frm_SearchDate"]/div[1]/table/tbody/tr[1]/td/select'
-        search_xpath = '//*[@id="frm_SearchDate"]/p[2]/a[2]/img'
-        rate_xpath   = '//*[@id="frm_SearchDate"]/div[6]/table/tbody/tr/td[1]'
+    # 달러(0), 위안화(1), 엔화(3)
+    currencies = [("달러(USD)", 0), ("위안(CNY)", 1), ("엔(JPY)", 3)]
 
-        for currency, idx in [("달러(USD)",0),("위안(CNY)",1),("엔(JPY)",3)]:
+    try:
+        chk("fx")
+        driver.get("http://www.smbs.biz/ExRate/StdExRate.jsp")
+        time.sleep(3)
+
+        start_box = wait.until(EC.element_to_be_clickable((By.ID, "startDate")))
+        end_box   = wait.until(EC.element_to_be_clickable((By.ID, "endDate")))
+        set_value_force(start_box, date)
+        set_value_force(end_box,   date)
+
+        for currency, option_index in currencies:
             chk("fx")
             try:
-                sel = wait.until(EC.element_to_be_clickable((By.XPATH, select_xpath)))
-                Select(sel).select_by_index(idx)
-                btn = wait.until(EC.element_to_be_clickable((By.XPATH, search_xpath)))
-                driver.execute_script("arguments[0].click();", btn)
+                sel_el   = wait.until(EC.element_to_be_clickable((By.XPATH, select_xpath)))
+                Select(sel_el).select_by_index(option_index)
+
+                search_btn = wait.until(EC.element_to_be_clickable((By.XPATH, search_xpath)))
+                driver.execute_script("arguments[0].click();", search_btn)
                 time.sleep(2)
-                cell = wait.until(EC.presence_of_element_located((By.XPATH, rate_xpath)))
-                txt  = cell.text.strip().replace(",","")
-                val  = float(txt) if txt else None
+
+                rate_cell = wait.until(EC.presence_of_element_located((By.XPATH, rate_xpath)))
+                txt = rate_cell.text.strip().replace(",", "")
+                val = float(txt) if txt else None
             except RuntimeError: raise
             except Exception as e:
-                print(f"[fx-sel] {currency}: {e}"); val = None
+                print(f"[fx] {currency}: {e}")
+                val = None
             results.append({"통화": currency, "값(원)": val})
 
         df = pd.DataFrame(results).set_index("통화")
         df["값(원)"] = pd.to_numeric(df["값(원)"], errors="coerce")
+
         try:
-            usd = df.loc["달러(USD)","값(원)"]
-            cny = df.loc["위안(CNY)","값(원)"]
-            jpy = df.loc["엔(JPY)","값(원)"]
-            if pd.notna(usd) and pd.notna(cny) and cny:
-                df.loc["위안/달러","값(원)"] = round(usd/cny, 4)
-            if pd.notna(usd) and pd.notna(jpy) and jpy:
-                df.loc["엔/달러","값(원)"]   = round(usd/(jpy/100), 4)
+            usd = df.loc["달러(USD)", "값(원)"]
+            cny = df.loc["위안(CNY)", "값(원)"]
+            jpy = df.loc["엔(JPY)",   "값(원)"]
+            if pd.notna(usd) and pd.notna(cny) and cny != 0:
+                df.loc["위안/달러", "값(원)"] = round(usd / cny, 4)
+            if pd.notna(usd) and pd.notna(jpy) and jpy != 0:
+                df.loc["엔/달러",   "값(원)"] = round(usd / (jpy / 100), 4)
         except Exception: pass
+
         return df, None
     except RuntimeError: raise
     except Exception as e:
@@ -287,7 +225,7 @@ def run_fx_selenium(date: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. 채권정보센터
+# 3. 채권정보센터 — 원본 스크립트 기반
 # ══════════════════════════════════════════════════════════════════════════════
 def run_bond(date: str):
     import pandas as pd
@@ -300,148 +238,138 @@ def run_bond(date: str):
     driver = make_driver(headless=False)
     wait   = WebDriverWait(driver, 40)
 
-    def safe_dismiss_popup():
-        for xp in ['//*[@id="popup_ok"]', '//button[contains(text(),"확인")]']:
-            try:
-                WebDriverWait(driver,5).until(EC.element_to_be_clickable((By.XPATH,xp))).click()
-                return
-            except Exception: pass
+    def switch_to_main_frame():
+        """fraAMAKMain 프레임으로 이동"""
+        driver.switch_to.default_content()
+        try:
+            driver.switch_to.frame(driver.find_element(By.NAME, "fraAMAKMain"))
+        except Exception:
+            driver.switch_to.frame(driver.find_element(By.ID, "fraAMAKMain"))
 
-    def js_type_date(xpath):
-        el = driver.find_element(By.XPATH, xpath)
-        driver.execute_script(
-            "var e=arguments[0];e.value='';"
-            "e.value=arguments[1];"
-            "e.dispatchEvent(new Event('input',{bubbles:true}));"
-            "e.dispatchEvent(new Event('change',{bubbles:true}));", el, date)
-        el.send_keys(Keys.TAB)
-        time.sleep(0.5)
+    def switch_to_nested():
+        """fraAMAKMain → maincontent → tabContents1_contents_tabs1_body"""
+        switch_to_main_frame()
+        driver.switch_to.frame(driver.find_element(By.ID, "maincontent"))
+        driver.switch_to.frame(driver.find_element(By.ID, "tabContents1_contents_tabs1_body"))
+        time.sleep(3)
+
+    def dismiss_popup():
+        try:
+            WebDriverWait(driver, 8).until(
+                EC.element_to_be_clickable((By.XPATH, '//*[@id="popup_ok"]'))).click()
+        except Exception: pass
+
+    def input_date():
+        el = driver.find_element(By.XPATH, '//*[@id="srchDt_input"]')
+        el.send_keys(Keys.BACKSPACE * len(el.get_attribute("value")))
+        el.send_keys(date)
 
     def click_all_cb():
-        for i in range(1,5):
+        for i in range(1, 5):
             try:
-                driver.find_element(By.XPATH,f'//*[@id="checkbox{i}_input_0"]').click()
+                driver.find_element(By.XPATH, f'//*[@id="checkbox{i}_input_0"]').click()
                 time.sleep(0.2)
             except Exception: pass
 
     def click_search():
-        driver.find_element(By.XPATH,'//*[@id="image1"]').click()
+        driver.find_element(By.XPATH, '//*[@id="image1"]').click()
         time.sleep(7)
 
-    def parse_grid(div_id, tbl_id, tbody_id, cols):
-        soup = BeautifulSoup(driver.page_source,"html.parser")
-        d = soup.find("div",id=div_id)
+    def parse_grid(cols):
+        soup  = BeautifulSoup(driver.page_source, "html.parser")
+        d     = soup.find("div", id="grdMain_dataLayer")
         if not d: return pd.DataFrame(columns=cols)
-        t = d.find("table",id=tbl_id)
+        t     = d.find("table", id="grdMain_body_table")
         if not t: return pd.DataFrame(columns=cols)
-        tb= t.find("tbody",id=tbody_id)
+        tb    = t.find("tbody", id="grdMain_body_tbody")
         if not tb: return pd.DataFrame(columns=cols)
-        data=[[c.get_text(strip=True) for c in r.find_all("td")] for r in tb.find_all("tr")]
-        return pd.DataFrame(data,columns=cols) if data else pd.DataFrame(columns=cols)
+        data  = [[c.get_text(strip=True) for c in r.find_all("td")] for r in tb.find_all("tr")]
+        if not data: return pd.DataFrame(columns=cols)
+        # 열 수가 다르면 잘라내거나 패딩
+        fixed = []
+        for row in data:
+            if len(row) > len(cols):  row = row[:len(cols)]
+            elif len(row) < len(cols): row = row + [""] * (len(cols) - len(row))
+            fixed.append(row)
+        return pd.DataFrame(fixed, columns=cols)
 
-    def go_nested():
-        driver.switch_to.default_content()
-        try: driver.switch_to.frame(driver.find_element(By.NAME,"fraAMAKMain"))
-        except Exception: driver.switch_to.frame(driver.find_element(By.ID,"fraAMAKMain"))
-        driver.switch_to.frame(driver.find_element(By.ID,"maincontent"))
-        driver.switch_to.frame(driver.find_element(By.ID,"tabContents1_contents_tabs1_body"))
-        time.sleep(2)
-
-    def click_left_menu(idx_1based):
-        """좌측 메뉴 idx번째 항목 클릭 (1=국고채/회사채, 2=CP, 3=CD)"""
-        tried = []
-        candidates = [
-            f'//*[@id="leftGenLv1_{idx_1based-1}_leftGrpLv1Li"]',
-            f'//*[@id="leftGenLv1_{idx_1based-1}_leftGrpLv1A"]',
-            f'(//ul[contains(@id,"leftGrpLv1") or contains(@class,"leftNav")]//li)[{idx_1based}]/a',
-            f'(//div[@id="leftNavi"]//li)[{idx_1based}]/a',
-            f'(//li[contains(@id,"leftGrp")])[{idx_1based}]/a',
-            f'(//li[contains(@id,"leftGrp")])[{idx_1based}]',
-        ]
-        for xp in candidates:
-            try:
-                el = WebDriverWait(driver,5).until(EC.element_to_be_clickable((By.XPATH,xp)))
-                el.click()
-                time.sleep(5)
-                return
-            except Exception as e:
-                tried.append(f"{xp}: {e}")
-
-        # 최후 수단: JS로 모든 클릭 가능 링크 찾기
-        try:
-            links = driver.find_elements(By.XPATH,'//a[contains(@href,"javascript") or @onclick]')
-            if len(links) >= idx_1based:
-                driver.execute_script("arguments[0].click();", links[idx_1based-1])
-                time.sleep(5)
-                return
-        except Exception as e:
-            tried.append(f"js fallback: {e}")
-
-        raise RuntimeError(f"메뉴 클릭 실패 (idx={idx_1based}): " + " | ".join(tried[:3]))
+    bond_cols = ['종류','종류명','신용등급','조회기준','3월','6월','9월','1년','1년6월',
+                 '2년','2년6월','3년','4년','5년','7년','10년','15년','20년','30년','50년']
+    cp_cols   = ['신용등급','구분','기관명','7일','15일','1월','3월','6월','1년']
 
     try:
         chk("bond")
         driver.get("https://www.kofiabond.or.kr/")
-        time.sleep(8)
+        time.sleep(10)
 
-        driver.switch_to.frame(driver.find_element(By.NAME,"fraAMAKMain"))
-        driver.find_element(By.XPATH,'//*[@id="image6"]').click()
-        time.sleep(9)
+        # ── 채권수익률 메뉴 진입 (image6 클릭) ──────────────────────────────
+        switch_to_main_frame()
+        driver.find_element(By.XPATH, '//*[@id="image6"]').click()
+        time.sleep(10)
 
-        # 국고채/회사채
-        driver.switch_to.frame(driver.find_element(By.ID,"maincontent"))
-        driver.switch_to.frame(driver.find_element(By.ID,"tabContents1_contents_tabs1_body"))
+        # ── 국고채/회사채 조회 ────────────────────────────────────────────────
+        switch_to_nested()
+        dismiss_popup()
+        input_date()
+        click_all_cb()
+        click_search()
+        chk("bond")
+        kb_df1 = parse_grid(bond_cols)
+
+        # ── CP 메뉴 클릭 (fraAMAKMain 레벨에서) ──────────────────────────────
+        chk("bond")
+        switch_to_main_frame()
+        driver.find_element(By.XPATH, '//*[@id="leftGenLv1_1_leftGrpLv1Li"]').click()
         time.sleep(5)
-        safe_dismiss_popup()
-        chk("bond")
-        js_type_date('//*[@id="srchDt_input"]')
+
+        # ── CP 조회 ───────────────────────────────────────────────────────────
+        switch_to_nested()
+        dismiss_popup()
+        input_date()
         click_all_cb()
         click_search()
-
-        bond_cols=['종류','종류명','신용등급','조회기준','3월','6월','9월','1년','1년6월',
-                   '2년','2년6월','3년','4년','5년','7년','10년','15년','20년','30년','50년']
-        kb_df1 = parse_grid("grdMain_dataLayer","grdMain_body_table","grdMain_body_tbody",bond_cols)
-
-        # CP
         chk("bond")
-        go_nested()
-        click_left_menu(2)
-        safe_dismiss_popup()
-        js_type_date('//*[@id="srchDt_input"]')
+        kb_df2 = parse_grid(cp_cols)
+
+        # ── CD 메뉴 클릭 (fraAMAKMain 레벨에서) ──────────────────────────────
+        chk("bond")
+        switch_to_main_frame()
+        driver.find_element(By.XPATH, '//*[@id="leftGenLv1_2_leftGrpLv1A"]').click()
+        time.sleep(5)
+
+        # ── CD 조회 ───────────────────────────────────────────────────────────
+        switch_to_nested()
+        dismiss_popup()
+        input_date()
         click_all_cb()
         click_search()
-
-        cp_cols=['신용등급','구분','기관명','7일','15일','1월','3월','6월','1년']
-        kb_df2 = parse_grid("grdMain_dataLayer","grdMain_body_table","grdMain_body_tbody",cp_cols)
-
-        # CD
         chk("bond")
-        go_nested()
-        click_left_menu(3)
-        safe_dismiss_popup()
-        js_type_date('//*[@id="srchDt_input"]')
-        click_all_cb()
-        click_search()
+        kb_df3 = parse_grid(cp_cols)
 
-        kb_df3 = parse_grid("grdMain_dataLayer","grdMain_body_table","grdMain_body_tbody",cp_cols)
-
-        def sf(df,r,c):
-            try: return float(str(df.iloc[r,c]).replace(",",""))
+        def sf(df, r, c):
+            try: return float(str(df.iloc[r, c]).replace(",", ""))
             except: return None
 
         summary = {
-            "국고채 3년":sf(kb_df1,0,11),   "국고채 5년":sf(kb_df1,0,13),
-            "국고채 10년":sf(kb_df1,0,15),
-            "회사채 AAA(3y)":sf(kb_df1,28,11), "회사채 AA+(3y)":sf(kb_df1,29,11),
-            "회사채 AA0(3y)":sf(kb_df1,30,11), "회사채 AA-(3y)":sf(kb_df1,31,11),
-            "회사채 A+(3y)":sf(kb_df1,32,11),  "회사채 A0(3y)":sf(kb_df1,33,11),
-            "회사채 A-(3y)":sf(kb_df1,34,11),  "회사채 BBB+(3y)":sf(kb_df1,35,11),
-            "금융채 AA-(3y)":sf(kb_df1,19,11), "금융채 A+(3y)":sf(kb_df1,20,11),
-            "금융채 A0(3y)":sf(kb_df1,21,11),  "금융채 A-(3y)":sf(kb_df1,22,11),
-            "CD(91일)":sf(kb_df3,5,6), "CP(91일)":sf(kb_df2,5,6),
+            "국고채 3년":    sf(kb_df1, 0, 11),
+            "국고채 5년":    sf(kb_df1, 0, 13),
+            "국고채 10년":   sf(kb_df1, 0, 15),
+            "회사채 AAA(3y)":sf(kb_df1, 28, 11),
+            "회사채 AA+(3y)":sf(kb_df1, 29, 11),
+            "회사채 AA0(3y)":sf(kb_df1, 30, 11),
+            "회사채 AA-(3y)":sf(kb_df1, 31, 11),
+            "회사채 A+(3y)": sf(kb_df1, 32, 11),
+            "회사채 A0(3y)": sf(kb_df1, 33, 11),
+            "회사채 A-(3y)": sf(kb_df1, 34, 11),
+            "회사채 BBB+(3y)":sf(kb_df1, 35, 11),
+            "금융채 AA-(3y)":sf(kb_df1, 19, 11),
+            "금융채 A+(3y)": sf(kb_df1, 20, 11),
+            "금융채 A0(3y)": sf(kb_df1, 21, 11),
+            "금융채 A-(3y)": sf(kb_df1, 22, 11),
+            "CD(91일)":      sf(kb_df3, 5, 6),
+            "CP(91일)":      sf(kb_df2, 5, 6),
         }
-        import pandas as pd
-        df = pd.DataFrame(list(summary.items()),columns=["종목","수익률(%)"])
+        df = pd.DataFrame(list(summary.items()), columns=["종목", "수익률(%)"])
         return df.set_index("종목"), None
 
     except RuntimeError: raise
