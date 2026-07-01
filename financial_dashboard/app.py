@@ -930,18 +930,43 @@ def run_rates():
         }
 
         def parse_soup(soup):
+            import re
+            # 방법1: span id 직접 추출
             def g(sid):
                 el = soup.find(id=sid)
                 return el.get_text(strip=True) if el else ""
             actual = g("p")
-            if not actual:
-                return None
-            return {
-                "실제": actual,        "이전": g("prev"),
-                "최고": g("high"),     "최저": g("low"),
-                "날짜": g("date"),     "단위": g("unit"),
-                "업데이트 주기": g("freq"),
-            }
+            if actual:
+                return {
+                    "실제": actual,        "이전": g("prev"),
+                    "최고": g("high"),     "최저": g("low"),
+                    "날짜": g("date"),     "단위": g("unit"),
+                    "업데이트 주기": g("freq"),
+                }
+            # 방법2: 헤더에 "실제" 또는 "Actual"이 있는 테이블 탐색
+            stat_keywords = {"실제","이전","최고","최저","Actual","Previous","High","Low"}
+            for tbl in soup.find_all("table"):
+                thead = tbl.find("thead") or tbl.find("tr")
+                if not thead: continue
+                ths = [th.get_text(strip=True) for th in thead.find_all(["th","td"])]
+                if not any(h in stat_keywords for h in ths): continue
+                tbody = tbl.find("tbody")
+                if not tbody: continue
+                for row in tbody.find_all("tr"):
+                    cols = [td.get_text(strip=True) for td in row.find_all("td")]
+                    if len(cols) < 4: continue
+                    # 날짜 형식(YYYY-MM-DD) 제외, 순수 숫자여야 함
+                    if re.match(r'^\d{4}-\d{2}-\d{2}', cols[0]): continue
+                    if not re.match(r'^[\d.]+$', cols[0].replace(",","")): continue
+                    return {
+                        "실제": cols[0], "이전": cols[1] if len(cols)>1 else "",
+                        "최고": cols[2] if len(cols)>2 else "",
+                        "최저": cols[3] if len(cols)>3 else "",
+                        "날짜": cols[4] if len(cols)>4 else "",
+                        "단위": cols[5] if len(cols)>5 else "",
+                        "업데이트 주기": cols[6] if len(cols)>6 else "",
+                    }
+            return None
 
         # 1) requests — 한글 URL
         try:
@@ -980,20 +1005,6 @@ def run_rates():
             parsed3 = parse_soup(soup3)
             if parsed3:
                 return [{"국가": country, **parsed3}]
-            # 테이블 행에서 숫자 패턴으로 마지막 시도
-            for tbl in soup3.find_all("table"):
-                tbody = tbl.find("tbody")
-                if not tbody: continue
-                for row in tbody.find_all("tr"):
-                    cols = [td.get_text(strip=True) for td in row.find_all("td")]
-                    if len(cols) >= 4 and cols[0].replace(".","").replace("-","").isdigit():
-                        return [{"국가": country,
-                                 "실제": cols[0], "이전": cols[1] if len(cols)>1 else "",
-                                 "최고": cols[2] if len(cols)>2 else "",
-                                 "최저": cols[3] if len(cols)>3 else "",
-                                 "날짜": cols[4] if len(cols)>4 else "",
-                                 "단위": cols[5] if len(cols)>5 else "",
-                                 "업데이트 주기": cols[6] if len(cols)>6 else ""}]
         except RuntimeError: raise
         except Exception as e:
             print(f"[rates] {country} selenium: {e}")
