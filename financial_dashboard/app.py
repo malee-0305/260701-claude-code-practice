@@ -550,23 +550,40 @@ def _krx_worker(start_date: str, end_date: str):
         _krx_login_event.clear()
         chk("krx")
 
-        # 1) 시총
-        open_mdi(driver,wait,"MDC0301")
-        sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[5]/ul/li[2]/div/div[1]/ul/li[2]/a')
-        sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[5]/ul/li[2]/div/div[1]/ul/li[2]/ul/li[1]/a')
+        # 1) 시총 — 종합정보(일) [42001], menuId=MDC03010201 직접 접근
+        open_mdi(driver, wait, "MDC03010201")
+        # 조회구분: 상장정보 선택 (라디오 버튼)
+        for xp in [
+            '//label[contains(text(),"상장정보")]',
+            '//*[contains(@id,"FORM")]//label[contains(text(),"상장")]',
+            '//input[@type="radio"][@value="S"]',
+            '//input[@type="radio"][1]',
+        ]:
+            try: sc(wait, By.XPATH, xp); time.sleep(0.3); break
+            except: pass
         actual=ed(driver,wait,'//*[@id="trdDd"]','//*[@id="jsSearchButton"]',
                   'table#jsTable_MDCEASY002_0', end_date)
         krx1=ps(driver.page_source,"jsTable_MDCEASY002_0",
                 ["구분","회사수","종목수","상장주식수","자본금","시가총액"])
-        sct(wait)
 
-        # 2) ETP
-        sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[5]/ul/li[2]/div/div[1]/ul/li[3]/a')
-        sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[5]/ul/li[2]/div/div[1]/ul/li[3]/ul/li[1]/a')
+        # 2) ETP 시총 — menuId=MDC03020101 직접 접근 (ETP 종합정보(일))
+        open_mdi(driver, wait, "MDC03020101")
         ed(driver,wait,'//*[@id="trdDd"]','//*[@id="jsSearchButton"]',
-           'table#jsTable_MDCEASY007_0',actual)
+           'table#jsTable_MDCEASY007_0', actual)
         krx2=ps(driver.page_source,"jsTable_MDCEASY007_0",
                 ["구분","운용사수","종목수","상장좌수","시가총액","순자산총액"])
+        # ETP 페이지 파싱 실패 시 이전 메뉴 방식으로 재시도
+        if krx2.empty:
+            open_mdi(driver,wait,"MDC0301")
+            time.sleep(2)
+            try:
+                sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[5]/ul/li[2]/div/div[1]/ul/li[3]/a')
+                sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[5]/ul/li[2]/div/div[1]/ul/li[3]/ul/li[1]/a')
+                ed(driver,wait,'//*[@id="trdDd"]','//*[@id="jsSearchButton"]',
+                   'table#jsTable_MDCEASY007_0', actual)
+                krx2=ps(driver.page_source,"jsTable_MDCEASY007_0",
+                        ["구분","운용사수","종목수","상장좌수","시가총액","순자산총액"])
+            except Exception: pass
 
         # 3) 주식 거래대금 (start_date ~ actual)
         open_mdi(driver,wait,"MDC0201")
