@@ -1,11 +1,11 @@
-import time, threading
+import os, time, threading
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
 CHROME_BINARY = ""
-CHROME_DRIVER = "chromedriver.exe"
+CHROME_DRIVER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chromedriver.exe")
 
 # ── 섹션별 전역 상태 ─────────────────────────────────────────────────────────
 SECTIONS = ["investing", "fx", "bond", "call", "krx", "rates"]
