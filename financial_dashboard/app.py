@@ -593,25 +593,142 @@ def _krx_worker(start_date: str, end_date: str):
         wr2(driver,"table.CI-GRID-BODY-TABLE",80,2)
         krx4=pd.DataFrame(pg(driver.page_source),columns=gc)
 
-        # 요약
+        # 5) NXT 주식 거래대금 (코스피)
+        nxt_kospi = pd.DataFrame(columns=["투자자구분","거래대금(매도)","거래대금(매수)"])
+        nxt_kosdaq = pd.DataFrame(columns=["투자자구분","거래대금(매도)","거래대금(매수)"])
+        try:
+            open_mdi(driver,wait,"MDC0201")
+            # NXT 거래대금 메뉴: 주식 > 거래대금 > NXT > 투자자별
+            sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[1]/ul/li[2]/div/div[1]/ul/li[4]/a')
+            sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[1]/ul/li[2]/div/div[1]/ul/li[4]/ul/li[1]/a')
+            sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[1]/ul/li[2]/div/div[1]/ul/li[4]/ul/li[1]/ul/li[1]/a')
+            s3=wait.until(EC.presence_of_element_located((By.XPATH,'//*[@id="strtDd"]')))
+            e3=wait.until(EC.presence_of_element_located((By.XPATH,'//*[@id="endDd"]')))
+            ct(s3, start_date); ct(e3, actual)
+            sc(wait,By.XPATH,'//*[@id="jsSearchButton"]')
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR,'div.CI-GRID-WRAPPER,div.CI-GRID-AREA')))
+            wr2(driver,"table.CI-GRID-BODY-TABLE",60,2)
+            nxt_gc=["투자자구분","거래대금(매도)","거래대금(매수)","거래대금(순매수)"]
+            nxt_kospi=pd.DataFrame(pg(driver.page_source),columns=nxt_gc)
+            sct(wait)
+            # 코스닥
+            sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[1]/ul/li[2]/div/div[1]/ul/li[4]/ul/li[1]/ul/li[2]/a')
+            s4=wait.until(EC.presence_of_element_located((By.XPATH,'//*[@id="strtDd"]')))
+            e4=wait.until(EC.presence_of_element_located((By.XPATH,'//*[@id="endDd"]')))
+            ct(s4, start_date); ct(e4, actual)
+            sc(wait,By.XPATH,'//*[@id="jsSearchButton"]')
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR,'div.CI-GRID-WRAPPER,div.CI-GRID-AREA')))
+            wr2(driver,"table.CI-GRID-BODY-TABLE",60,2)
+            nxt_kosdaq=pd.DataFrame(pg(driver.page_source),columns=nxt_gc)
+        except Exception as nxt_err:
+            pass  # NXT 메뉴 실패시 빈 DataFrame 유지
+
+        # ── 결과 조합 ──────────────────────────────────────────────────────
         kospi=pf(krx1,"구분",["유가증권시장","KOSPI","코스피"],"시가총액")/1e6
         kosdaq=pf(krx1,"구분",["코스닥시장","KOSDAQ","코스닥"],"시가총액")/1e6
         konex=pf(krx1,"구분",["코넥스시장","KONEX","코넥스"],"시가총액")/1e6
         etf=pf(krx2,"구분",["ETF"],"시가총액")/1e6
         etn=pf(krx2,"구분",["ETN"],"시가총액")/1e6
+        elw_row=krx2[krx2["구분"].astype(str).str.contains("ELW",na=False)]
+        elw=tf(elw_row.iloc[0]["시가총액"])/1e6 if not elw_row.empty else 0.0
 
-        rows=[
-            {"구분":"시가총액(조원)","코스피":round(kospi,1),"코스닥":round(kosdaq,1),
-             "코넥스":round(konex,1),"ETF":round(etf,1),"ETN":round(etn,1)},
-            {"구분":f"전체거래대금(조원)\n{start_date}~{actual}",
-             "전체":round(gs(krx3,"전체")/1e6,2),"개인":round(gs(krx3,"개인")/1e6,2),
-             "기관":round(gs(krx3,"기관")/1e6,2),"외국인":round(gs(krx3,"외국인")/1e6,2)},
-            {"구분":f"ETF거래대금(조원)\n{start_date}~{actual}",
-             "전체":round(gs(krx4,"전체")/1e12,2),"개인":round(gs(krx4,"개인")/1e12,2),
-             "기관":round(gs(krx4,"기관")/1e12,2),"외국인":round(gs(krx4,"외국인")/1e12,2)},
-        ]
-        df_f=pd.DataFrame(rows).set_index("구분")
-        _state["krx"]["data"]  = df_f.to_html(classes="data-table",border=0,na_rep="-")
+        # 투자자별 거래대금 상세 함수 (백만원 → 조원)
+        inv_order=["금융투자","보험","투신","사모","은행","기타금융","연기금","기관합계",
+                   "기타법인","개인","외국인","기타외국인","전체"]
+        def build_detail(df_raw, unit=1e6):
+            rows=[]
+            for inv in inv_order:
+                hit=df_raw[df_raw["투자자구분"].astype(str).str.contains(
+                    inv.replace("등","").strip(),na=False,regex=False)]
+                if hit.empty: continue
+                r=hit.iloc[0]
+                sell=tf(r["거래대금(매도)"])
+                buy=tf(r["거래대금(매수)"])
+                rows.append({
+                    "투자자구분":inv,
+                    "매도(조원)":round(sell/unit,2),
+                    "매수(조원)":round(buy/unit,2),
+                    "합계(조원)":round((sell+buy)/unit,2),
+                })
+            return pd.DataFrame(rows).set_index("투자자구분")
+
+        df_stock_detail=build_detail(krx3, unit=1e6)   # 주식: 백만원
+        df_etf_detail  =build_detail(krx4, unit=1e12)  # ETF: 원
+
+        # NXT 투자자별 (원 → 조원)
+        def build_nxt(df_raw):
+            if df_raw.empty: return pd.DataFrame(columns=["매도(조원)","매수(조원)","합계(조원)"])
+            rows=[]
+            for inv in inv_order:
+                hit=df_raw[df_raw["투자자구분"].astype(str).str.contains(
+                    inv.replace("등","").strip(),na=False,regex=False)]
+                if hit.empty: continue
+                r=hit.iloc[0]
+                sell=tf(r["거래대금(매도)"])
+                buy=tf(r["거래대금(매수)"])
+                rows.append({"투자자구분":inv,
+                             "매도(조원)":round(sell/1e12,2),
+                             "매수(조원)":round(buy/1e12,2),
+                             "합계(조원)":round((sell+buy)/1e12,2)})
+            return pd.DataFrame(rows).set_index("투자자구분") if rows else pd.DataFrame(columns=["매도(조원)","매수(조원)","합계(조원)"])
+
+        df_nxt_kospi  = build_nxt(nxt_kospi)
+        df_nxt_kosdaq = build_nxt(nxt_kosdaq)
+
+        # KRX+NXT 합계 요약
+        def tot(df, label, unit=1e6):
+            hit=df[df["투자자구분"].astype(str).str.contains(label.replace("등","").strip(),na=False,regex=False)]
+            if hit.empty: return 0.0
+            r=hit.iloc[0]
+            return (tf(r["거래대금(매도)"])+tf(r["거래대금(매수)"]))/unit
+
+        def nxt_tot(df, label):
+            if df.empty: return 0.0
+            hit=df[df["투자자구분"].astype(str).str.contains(label.replace("등","").strip(),na=False,regex=False)]
+            if hit.empty: return 0.0
+            r=hit.iloc[0]
+            return (tf(r["거래대금(매도)"])+tf(r["거래대금(매수)"]))/1e12
+
+        labels_sum=["전체","개인","기관합계","외국인"]
+        krx_stock_tot={l: round(tot(krx3,l,1e6),2) for l in labels_sum}
+        krx_etf_tot  ={l: round(tot(krx4,l,1e12),2) for l in labels_sum}
+        krx_tot      ={l: round(krx_stock_tot[l]+krx_etf_tot[l],2) for l in labels_sum}
+        nxt_k={l: round(nxt_tot(nxt_kospi,l)+nxt_tot(nxt_kosdaq,l),2) for l in labels_sum}
+        total_sum    ={l: round(krx_tot[l]+nxt_k[l],2) for l in labels_sum}
+
+        tbl_h = lambda title,df: (
+            f'<div class="krx-sub"><h5>{title}</h5>'
+            + df.to_html(classes="data-table",border=0,na_rep="-")
+            + '</div>'
+        )
+
+        df_cap=pd.DataFrame([{
+            "코스피(조원)":round(kospi,1),"코스닥(조원)":round(kosdaq,1),
+            "코넥스(조원)":round(konex,1),"ETF(조원)":round(etf,1),
+            "ETN(조원)":round(etn,1),"ELW(조원)":round(elw,1),
+        }],index=["시가총액"])
+
+        df_summary=pd.DataFrame([
+            {"구분":"KRX 주식","전체(조원)":krx_stock_tot["전체"],"개인(조원)":krx_stock_tot["개인"],"기관(조원)":krx_stock_tot["기관합계"],"외국인(조원)":krx_stock_tot["외국인"]},
+            {"구분":"KRX ETF","전체(조원)":krx_etf_tot["전체"],"개인(조원)":krx_etf_tot["개인"],"기관(조원)":krx_etf_tot["기관합계"],"외국인(조원)":krx_etf_tot["외국인"]},
+            {"구분":"KRX 합계","전체(조원)":krx_tot["전체"],"개인(조원)":krx_tot["개인"],"기관(조원)":krx_tot["기관합계"],"외국인(조원)":krx_tot["외국인"]},
+            {"구분":"NXT 합계","전체(조원)":nxt_k["전체"],"개인(조원)":nxt_k["개인"],"기관(조원)":nxt_k["기관합계"],"외국인(조원)":nxt_k["외국인"]},
+            {"구분":"KRX+NXT","전체(조원)":total_sum["전체"],"개인(조원)":total_sum["개인"],"기관(조원)":total_sum["기관합계"],"외국인(조원)":total_sum["외국인"]},
+        ]).set_index("구분")
+
+        period_label=f"{start_date}~{actual}"
+        html_out = (
+            tbl_h(f"■ 시가총액 (기준일: {actual})", df_cap)
+            + tbl_h(f"■ 주식 거래대금 — KRX ({period_label}, 조원)", df_stock_detail)
+            + tbl_h(f"■ ETF 거래대금 — KRX ({period_label}, 조원)", df_etf_detail)
+        )
+        if not df_nxt_kospi.empty:
+            html_out += tbl_h(f"■ NXT 거래대금 — 코스피 ({period_label}, 조원)", df_nxt_kospi)
+        if not df_nxt_kosdaq.empty:
+            html_out += tbl_h(f"■ NXT 거래대금 — 코스닥 ({period_label}, 조원)", df_nxt_kosdaq)
+        html_out += tbl_h(f"■ 거래대금 합계 요약 ({period_label}, 조원)", df_summary)
+
+        _state["krx"]["data"]  = html_out
         _state["krx"]["error"] = None
     except RuntimeError as e:
         _state["krx"]["error"] = str(e)
