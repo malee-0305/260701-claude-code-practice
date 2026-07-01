@@ -499,10 +499,29 @@ def _krx_worker(start_date: str, end_date: str):
         soup=BeautifulSoup(html,"html.parser")
         t=soup.find("table",{"id":tid})
         if not t: return pd.DataFrame(columns=cols)
+        # thead에서 실제 컬럼 헤더 읽기
+        actual_cols = []
+        thead = t.find("thead")
+        if thead:
+            for tr in thead.find_all("tr"):
+                vals = [th.get_text(strip=True) for th in tr.find_all(["th","td"])]
+                if any(vals):
+                    actual_cols = vals   # 마지막 비어있지 않은 헤더 행 사용
         rows=t.find("tbody").find_all("tr") if t.find("tbody") else []
         data=[[c.get_text(strip=True).replace(",","") for c in r.find_all("td")]
               for r in rows if "조회된 데이터가 없습니다" not in r.get_text()]
-        return pd.DataFrame(data,columns=cols) if data else pd.DataFrame(columns=cols)
+        if not data: return pd.DataFrame(columns=cols)
+        if actual_cols:
+            # 실제 헤더 기반으로 DataFrame 생성 후 원하는 cols만 컬럼명으로 추출
+            n = len(actual_cols)
+            padded = [row[:n] + [""]*(n-len(row)) for row in data]
+            df_raw = pd.DataFrame(padded, columns=actual_cols)
+            result = pd.DataFrame()
+            for c in cols:
+                result[c] = df_raw[c] if c in df_raw.columns else ""
+            return result
+        # 헤더 없으면 위치 기반 fallback
+        return pd.DataFrame(data, columns=cols)
 
     def pg(html):
         soup=BeautifulSoup(html,"html.parser")
@@ -603,6 +622,24 @@ def _krx_worker(start_date: str, end_date: str):
                     break
             except Exception:
                 continue
+
+        # 순자산총액이 모두 0이면 ETF 전용 페이지(MDC03010302)에서 재시도
+        def _nav_all_zero(df):
+            if df.empty or "순자산총액" not in df.columns: return True
+            return df["순자산총액"].apply(lambda x: tf(x) == 0.0).all()
+
+        if _nav_all_zero(krx2):
+            for etp_mid2 in ["MDC03010302", "MDC03020101", "MDC03010301"]:
+                try:
+                    open_mdi(driver, wait, etp_mid2)
+                    ed(driver, wait, '//*[@id="trdDd"]', '//*[@id="jsSearchButton"]',
+                       'table#jsTable_MDCEASY007_0', actual)
+                    tmp2 = ps(driver.page_source, "jsTable_MDCEASY007_0", etp_cols)
+                    if not tmp2.empty and not _nav_all_zero(tmp2):
+                        krx2 = tmp2
+                        break
+                except Exception:
+                    continue
 
         # 3) 주식 거래대금 (start_date ~ actual)
         open_mdi(driver,wait,"MDC0201")
