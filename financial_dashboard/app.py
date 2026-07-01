@@ -624,22 +624,34 @@ def _krx_worker(start_date: str, end_date: str):
                 ["구분","회사수","종목수","상장주식수","자본금","시가총액"])
 
         # 2) ETP 시총 — 증권상품 종합정보(일) [43001]
-        # menuId 후보를 순서대로 시도
         etp_cols = ["구분","운용사수","종목수","상장좌수","시가총액","순자산총액"]
         krx2 = pd.DataFrame(columns=etp_cols)
+
+        def _open_etp_with_radio(mid):
+            """ETP 페이지 열고 상장정보 라디오 선택 후 날짜 조회"""
+            open_mdi(driver, wait, mid)
+            for xp in [
+                '//label[contains(text(),"상장정보")]',
+                '//*[contains(@id,"FORM")]//label[contains(text(),"상장")]',
+                '//input[@type="radio"][@value="S"]',
+                '//input[@type="radio"][1]',
+            ]:
+                try: sc(wait, By.XPATH, xp); time.sleep(0.3); break
+                except: pass
+            ed(driver, wait, '//*[@id="trdDd"]', '//*[@id="jsSearchButton"]',
+               'table#jsTable_MDCEASY007_0', actual)
+            return ps(driver.page_source, "jsTable_MDCEASY007_0", etp_cols)
+
         for etp_mid in ["MDC03010301", "MDC03010302", "MDC03020101", "MDC03020201"]:
             try:
-                open_mdi(driver, wait, etp_mid)
-                ed(driver, wait, '//*[@id="trdDd"]', '//*[@id="jsSearchButton"]',
-                   'table#jsTable_MDCEASY007_0', actual)
-                tmp = ps(driver.page_source, "jsTable_MDCEASY007_0", etp_cols)
+                tmp = _open_etp_with_radio(etp_mid)
                 if not tmp.empty:
                     krx2 = tmp
                     break
             except Exception:
                 continue
 
-        # 순자산총액이 모두 0이면 ETF 전용 페이지(MDC03010302)에서 재시도
+        # 순자산총액이 모두 0이면 다른 페이지에서 재시도
         def _nav_all_zero(df):
             if df.empty or "순자산총액" not in df.columns: return True
             return df["순자산총액"].apply(lambda x: tf(x) == 0.0).all()
@@ -647,10 +659,7 @@ def _krx_worker(start_date: str, end_date: str):
         if _nav_all_zero(krx2):
             for etp_mid2 in ["MDC03010302", "MDC03020101", "MDC03010301"]:
                 try:
-                    open_mdi(driver, wait, etp_mid2)
-                    ed(driver, wait, '//*[@id="trdDd"]', '//*[@id="jsSearchButton"]',
-                       'table#jsTable_MDCEASY007_0', actual)
-                    tmp2 = ps(driver.page_source, "jsTable_MDCEASY007_0", etp_cols)
+                    tmp2 = _open_etp_with_radio(etp_mid2)
                     if not tmp2.empty and not _nav_all_zero(tmp2):
                         krx2 = tmp2
                         break
@@ -817,8 +826,9 @@ def _krx_worker(start_date: str, end_date: str):
 
         # krx_df1: 상장주식수, 자본금, 시가총액 → 조원
         df_cap1 = to_trillion(krx1, ["상장주식수","자본금","시가총액"])
-        # krx_df2: 상장좌수, 시가총액, 순자산총액 → 조원
-        df_cap2 = to_trillion(krx2, ["상장좌수","시가총액","순자산총액"])
+        # krx_df2: 상장좌수, 시가총액, 순자산총액 → 조원 (빈 행 제거, 최대 5행)
+        krx2_clean = krx2[krx2["구분"].astype(str).str.strip() != ""].head(5)
+        df_cap2 = to_trillion(krx2_clean, ["상장좌수","시가총액","순자산총액"])
 
         # 시가총액 요약: krx_df1 소계/합계 행에서 조원 값으로 직접 구성
         def cap_조원(val): return round(val/1e6, 2)
