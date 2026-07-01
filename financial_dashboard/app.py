@@ -554,6 +554,22 @@ def _krx_worker(start_date: str, end_date: str):
             box=wait.until(EC.presence_of_element_located((By.XPATH,dxp)))
             ct(box,d)
             sc(wait,By.XPATH,bxp)
+            # 검색 클릭 후 기존 테이블 데이터가 사라질 때까지 대기
+            # (KRX 페이지 기본값이 오늘 날짜로 로드되어 있어 즉시 ok=True가 되는 오류 방지)
+            time.sleep(2)
+            # 로딩 중일 때 테이블이 비거나 로딩 인디케이터가 있을 수 있으므로 추가 대기
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                soup = BeautifulSoup(driver.page_source, "html.parser")
+                t = soup.select_one(css)
+                if t:
+                    tb = t.find("tbody")
+                    if tb:
+                        rows = [r for r in tb.find_all("tr")
+                                if "조회된 데이터가 없습니다" not in r.get_text()]
+                        if not rows:
+                            break  # 테이블이 비었으면 새 데이터 로딩 중
+                time.sleep(0.5)
             ok,nd=wr2(driver,css)
             if ok: return d
             if nd: d=(datetime.strptime(d,"%Y%m%d")-timedelta(days=1)).strftime("%Y%m%d")
