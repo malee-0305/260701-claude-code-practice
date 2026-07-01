@@ -163,21 +163,34 @@ def run_fx(date: str):
     def fetch_naver_fx(market_code, max_pages=10):
         base_url = ("https://finance.naver.com/marketindex/exchangeDailyQuote.nhn"
                     f"?marketindexCd={market_code}")
+        sess = requests.Session()
+        sess.verify = False
+        sess.headers.update(headers)
         for page in range(1, max_pages + 1):
             chk("fx")
-            r = requests.get(base_url + f"&page={page}", headers=headers, timeout=10, verify=False)
+            r = sess.get(base_url + f"&page={page}", timeout=15)
             soup = BeautifulSoup(r.text, "html.parser")
-            for row in soup.select("table.tbl_exchange tbody tr"):
+            rows = soup.select("table.tbl_exchange tbody tr")
+            if not rows:
+                # 테이블 구조가 바뀐 경우 모든 테이블 시도
+                for tbl in soup.find_all("table"):
+                    tb = tbl.find("tbody")
+                    if tb:
+                        rows = tb.find_all("tr")
+                        if rows: break
+            for row in rows:
                 cols = [td.get_text(strip=True) for td in row.find_all("td")]
-                if not cols: continue
+                if len(cols) < 2: continue
                 if cols[0] == date_fmt:
                     try: return float(cols[1].replace(",", ""))
                     except: return None
-            last_els = soup.select("table.tbl_exchange tbody tr td:first-child")
-            if last_els:
-                last = last_els[-1].get_text(strip=True)
-                if last and last < date_fmt:
-                    break
+            # 마지막 날짜 확인
+            date_cells = [td.get_text(strip=True)
+                         for row in rows
+                         for td in [row.find("td")]
+                         if td]
+            if date_cells and date_cells[-1] < date_fmt:
+                break
         return None
 
     results = []
@@ -185,9 +198,10 @@ def run_fx(date: str):
         chk("fx")
         try:
             val = fetch_naver_fx(code)
+            print(f"[fx] {name}: {val}")
         except RuntimeError: raise
         except Exception as e:
-            print(f"[fx] {name}: {e}"); val = None
+            print(f"[fx] {name} 오류: {e}"); val = None
         results.append({"통화": name, "값(원)": val})
 
     df = pd.DataFrame(results).set_index("통화")
