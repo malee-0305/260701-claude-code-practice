@@ -4,19 +4,23 @@ from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
-CHROME_BINARY  = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
-CHROME_DRIVER  = "/tmp/147.0.7727.24/chromedriver/chromedriver-linux64/chromedriver"
+CHROME_BINARY  = ""
+CHROME_DRIVER  = "chromedriver.exe"
 
 # ── Selenium 공통 드라이버 팩토리 ─────────────────────────────────────────
-def make_driver():
+def make_driver(headless=True):
     from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
     opts = webdriver.ChromeOptions()
-    opts.binary_location = CHROME_BINARY
-    for arg in ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
-                "--disable-gpu", "--window-size=1920,1080",
-                "--disable-blink-features=AutomationControlled"]:
-        opts.add_argument(arg)
+    if CHROME_BINARY:
+        opts.binary_location = CHROME_BINARY
+    if headless:
+        opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--window-size=1920,1080")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     svc = Service(CHROME_DRIVER)
     return webdriver.Chrome(service=svc, options=opts)
@@ -150,7 +154,7 @@ def fetch_fx(date: str):
                 "e.dispatchEvent(new Event('input',{bubbles:true}));"
                 "e.dispatchEvent(new Event('change',{bubbles:true}));", el, val)
 
-    driver = make_driver()
+    driver = make_driver(headless=False)
     wait   = WebDriverWait(driver, 25)
     results = []
 
@@ -209,7 +213,7 @@ def fetch_bond(date: str):
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.common.keys import Keys
 
-    driver = make_driver()
+    driver = make_driver(headless=False)
     wait   = WebDriverWait(driver, 30)
 
     def switch_nested(fid1, fid2):
@@ -278,7 +282,14 @@ def fetch_bond(date: str):
         # CP
         switch_nested("fraAMAKMain", "maincontent")
         driver.switch_to.frame(driver.find_element(By.ID, "tabContents1_contents_tabs1_body"))
-        driver.find_element(By.XPATH, '//*[@id="leftGenLv1_1_leftGrpLv1Li"]').click()
+        # CP 버튼: id 또는 텍스트로 찾기
+        try:
+            driver.find_element(By.XPATH, '//*[@id="leftGenLv1_1_leftGrpLv1Li"]').click()
+        except Exception:
+            try:
+                driver.find_element(By.XPATH, '//*[contains(text(),"CP")]').click()
+            except Exception:
+                driver.find_element(By.XPATH, '//li[contains(@id,"leftGrpLv1")][2]').click()
         time.sleep(6)
         dismiss_popup()
         type_date('//*[@id="srchDt_input"]')
@@ -291,7 +302,13 @@ def fetch_bond(date: str):
         # CD
         switch_nested("fraAMAKMain", "maincontent")
         driver.switch_to.frame(driver.find_element(By.ID, "tabContents1_contents_tabs1_body"))
-        driver.find_element(By.XPATH, '//*[@id="leftGenLv1_2_leftGrpLv1A"]').click()
+        try:
+            driver.find_element(By.XPATH, '//*[@id="leftGenLv1_2_leftGrpLv1A"]').click()
+        except Exception:
+            try:
+                driver.find_element(By.XPATH, '//*[contains(text(),"CD")]').click()
+            except Exception:
+                driver.find_element(By.XPATH, '//li[contains(@id,"leftGrpLv1")][3]').click()
         time.sleep(6)
         dismiss_popup()
         type_date('//*[@id="srchDt_input"]')
@@ -534,7 +551,7 @@ def fetch_krx(date: str):
         row = hit.iloc[0]
         return to_float(row["거래대금(매도)"]) + to_float(row["거래대금(매수)"])
 
-    driver = make_driver()
+    driver = make_driver(headless=False)
     wait   = WebDriverWait(driver, 40)
 
     # KRX는 로그인 없이 접근 시도
