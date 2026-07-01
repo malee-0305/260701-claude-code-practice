@@ -231,6 +231,17 @@
             <button class="btn btn-danger  btn-sm" id="krx-stop-btn" onclick="stopSection('krx')" disabled>중지</button>
           </div>
         </div>
+        <!-- NXT 업로드 패널 -->
+        <div id="nxt-upload-panel" style="background:#fffbeb;border-bottom:1px solid #fbd38d;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span style="font-size:0.82rem;font-weight:700;color:#744210;">📂 NXT 거래대금 파일</span>
+          <span id="nxt-status-text" style="font-size:0.78rem;color:#718096;">미업로드 — KRX 데이터만 집계됩니다</span>
+          <label style="cursor:pointer;margin:0;">
+            <span class="btn btn-sm" style="background:#ed8936;color:#fff;padding:4px 10px;border-radius:4px;font-size:0.78rem;">엑셀 업로드</span>
+            <input type="file" id="nxt-file-input" accept=".xlsx,.xls" style="display:none;" onchange="uploadNxt(this)">
+          </label>
+          <input type="text" id="nxt-period-input" placeholder="기간 (예: 20260601~20260630)" style="font-size:0.78rem;padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;width:200px;">
+          <button class="btn btn-sm" style="background:#c05621;color:#fff;padding:4px 10px;border-radius:4px;font-size:0.78rem;" onclick="clearNxt()">초기화</button>
+        </div>
         <div class="card-body" id="krx-body">
           <p class="note">조회 버튼을 클릭하고 KRX 로그인 완료 버튼을 누르세요.</p>
         </div>
@@ -488,6 +499,56 @@
     setBadge('krx', '데이터 수집 중', 'badge-loading');
     setBody('krx', '<p class="note">KRX 데이터 수집 중... (수 분 소요될 수 있습니다)</p>');
   }
+
+  async function uploadNxt(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const period = document.getElementById('nxt-period-input').value.trim();
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('period', period);
+    const statusEl = document.getElementById('nxt-status-text');
+    statusEl.textContent = '업로드 중...';
+    statusEl.style.color = '#c05621';
+    try {
+      const res = await fetch('/api/krx-nxt-upload', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        statusEl.textContent = `✅ ${data.message}`;
+        statusEl.style.color = '#276749';
+      } else {
+        statusEl.textContent = `❌ 오류: ${data.message}`;
+        statusEl.style.color = '#c53030';
+      }
+    } catch(e) {
+      statusEl.textContent = `❌ 업로드 실패: ${e.message}`;
+      statusEl.style.color = '#c53030';
+    }
+    input.value = '';
+  }
+
+  async function clearNxt() {
+    try {
+      await fetch('/api/krx-nxt-upload', { method: 'POST', body: new FormData() });
+    } catch(_) {}
+    const statusEl = document.getElementById('nxt-status-text');
+    statusEl.textContent = '초기화됨 — KRX 데이터만 집계됩니다';
+    statusEl.style.color = '#718096';
+  }
+
+  // 페이지 로드 시 NXT 상태 복원
+  (async function checkNxtStatus() {
+    try {
+      const res = await fetch('/api/krx-nxt-status');
+      const d = await res.json();
+      const statusEl = document.getElementById('nxt-status-text');
+      if (d.loaded) {
+        const pLabel = d.period ? ` (${d.period})` : '';
+        statusEl.textContent = `✅ NXT 데이터 로드됨${pLabel} — 코스피 ${d.kospi_rows}개, 코스닥 ${d.kosdaq_rows}개 투자자`;
+        statusEl.style.color = '#276749';
+      }
+    } catch(_) {}
+  })();
 </script>
 </body>
 </html>
