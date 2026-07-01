@@ -598,24 +598,35 @@ def _krx_worker(start_date: str, end_date: str):
         krx4=pd.DataFrame(pg(driver.page_source),columns=gc)
 
         # ── 결과 조합 ──────────────────────────────────────────────────────
-        kospi=pf(krx1,"구분",["유가증권시장","KOSPI","코스피"],"시가총액")/1e6
-        kosdaq=pf(krx1,"구분",["코스닥시장","KOSDAQ","코스닥"],"시가총액")/1e6
-        konex=pf(krx1,"구분",["코넥스시장","KONEX","코넥스"],"시가총액")/1e6
-        etf=pf(krx2,"구분",["ETF"],"시가총액")/1e6
-        etn=pf(krx2,"구분",["ETN"],"시가총액")/1e6
-        elw_row=krx2[krx2["구분"].astype(str).str.contains("ELW",na=False)]
-        elw=tf(elw_row.iloc[0]["시가총액"])/1e6 if not elw_row.empty else 0.0
 
-        # 투자자 순서
-        inv_order=["금융투자","보험","투신","사모","은행","기타금융","연기금","기관합계",
+        # 시가총액: "소계" 행에서 추출 (유가증권시장→첫번째소계, 코스닥→두번째소계)
+        subcap_rows = krx1[krx1["구분"].astype(str).str.strip().str.contains("소계",na=False)]
+        kospi  = tf(subcap_rows.iloc[0]["시가총액"]) if len(subcap_rows) > 0 else 0.0
+        kosdaq = tf(subcap_rows.iloc[1]["시가총액"]) if len(subcap_rows) > 1 else 0.0
+        # KONEX: 코넥스 섹션의 주권 행 (마지막 주권 행)
+        konex_rows = krx1[krx1["구분"].astype(str).str.strip() == "주권"]
+        konex = tf(konex_rows.iloc[-1]["시가총액"]) if not konex_rows.empty else 0.0
+        # 전체 합계
+        total_cap_row = krx1[krx1["구분"].astype(str).str.contains("전체|합계",na=False)]
+        total_cap = tf(total_cap_row.iloc[-1]["시가총액"]) if not total_cap_row.empty else 0.0
+
+        etf_row = krx2[krx2["구분"].astype(str).str.strip() == "ETF"]
+        etn_row = krx2[krx2["구분"].astype(str).str.strip() == "ETN"]
+        elw_row = krx2[krx2["구분"].astype(str).str.strip() == "ELW"]
+        etf = tf(etf_row.iloc[0]["시가총액"]) if not etf_row.empty else 0.0
+        etn = tf(etn_row.iloc[0]["시가총액"]) if not etn_row.empty else 0.0
+        elw = tf(elw_row.iloc[0]["시가총액"]) if not elw_row.empty else 0.0
+
+        # 투자자 순서 (KRX)
+        inv_order=["금융투자","보험","투신","사모","은행","기타금융","연기금 등","기관합계",
                    "기타법인","개인","외국인","기타외국인","전체"]
 
         # KRX 투자자별 거래대금 상세 테이블
         def build_detail(df_raw, unit):
             rows=[]
             for inv in inv_order:
-                hit=df_raw[df_raw["투자자구분"].astype(str).str.contains(
-                    inv.replace("등","").strip(),na=False,regex=False)]
+                keyword=inv.replace(" 등","").strip()
+                hit=df_raw[df_raw["투자자구분"].astype(str).str.contains(keyword,na=False,regex=False)]
                 if hit.empty: continue
                 r=hit.iloc[0]
                 sell=tf(r["거래대금(매도)"])
@@ -628,84 +639,121 @@ def _krx_worker(start_date: str, end_date: str):
                 })
             return pd.DataFrame(rows).set_index("투자자구분")
 
-        df_stock_detail=build_detail(krx3, unit=1e6)   # 주식: 백만원
-        df_etf_detail  =build_detail(krx4, unit=1e12)  # ETF: 원
+        df_stock_detail = build_detail(krx3, unit=1e6)   # 주식: 백만원
+        df_etf_detail   = build_detail(krx4, unit=1e12)  # ETF: 원
 
         # NXT 업로드 데이터로 테이블 구성 (원 → 조원)
         has_nxt = bool(_nxt_data["kospi"] or _nxt_data["kosdaq"])
 
+        # NXT 투자자별 합산 헬퍼 (기타+기관종합=기관, 전체=기타+개인+기관종합+외국인)
+        def nxt_get(mkt_dict, *keys):
+            """mkt_dict에서 여러 키를 매칭해 매도+매수 합산(원)"""
+            total = 0.0
+            for k in keys:
+                matched = next((dk for dk in mkt_dict if k in dk), None)
+                if matched:
+                    total += mkt_dict[matched]["매도"] + mkt_dict[matched]["매수"]
+            return total
+
         def build_nxt_from_upload(market_dict):
-            rows=[]
-            for inv in inv_order:
-                key=next((k for k in market_dict if inv.replace("등","").strip() in k),None)
-                if key is None: continue
-                sell=market_dict[key]["매도"]
-                buy =market_dict[key]["매수"]
-                rows.append({"투자자구분":inv,
-                             "매도(조원)":round(sell/1e12,2),
-                             "매수(조원)":round(buy/1e12,2),
-                             "합계(조원)":round((sell+buy)/1e12,2)})
+            if not market_dict:
+                return None
+            all_keys = list(market_dict.keys())
+            rows = []
+            for k in all_keys:
+                sell = market_dict[k]["매도"]
+                buy  = market_dict[k]["매수"]
+                rows.append({"투자자구분": k,
+                             "매도(조원)": round(sell/1e12, 2),
+                             "매수(조원)": round(buy/1e12, 2),
+                             "합계(조원)": round((sell+buy)/1e12, 2)})
             return pd.DataFrame(rows).set_index("투자자구분") if rows else None
 
         df_nxt_kospi  = build_nxt_from_upload(_nxt_data["kospi"])  if has_nxt else None
         df_nxt_kosdaq = build_nxt_from_upload(_nxt_data["kosdaq"]) if has_nxt else None
 
-        # 합계 요약
+        # KRX 주식 합계 (전체/개인/기관/외국인)
         def tot_krx(df, label, unit):
-            hit=df[df["투자자구분"].astype(str).str.contains(label.replace("등","").strip(),na=False,regex=False)]
+            keyword = label.replace(" 등","").strip()
+            hit = df[df["투자자구분"].astype(str).str.contains(keyword, na=False, regex=False)]
             if hit.empty: return 0.0
-            r=hit.iloc[0]
-            return (tf(r["거래대금(매도)"])+tf(r["거래대금(매수)"]))/unit
+            r = hit.iloc[0]
+            return (tf(r["거래대금(매도)"]) + tf(r["거래대금(매수)"])) / unit
 
-        def tot_nxt_upload(label):
-            val=0.0
+        # NXT 합계: 기관=기타+기관종합, 전체=기타+개인+기관종합+외국인
+        def nxt_total_val(key_label):
+            val = 0.0
             for mkt in [_nxt_data["kospi"], _nxt_data["kosdaq"]]:
-                key=next((k for k in mkt if label.replace("등","").strip() in k),None)
-                if key:
-                    val+=(mkt[key]["매도"]+mkt[key]["매수"])/1e12
-            return round(val,2)
+                if key_label == "전체":
+                    # 모든 투자자 합산
+                    for k in mkt:
+                        val += mkt[k]["매도"] + mkt[k]["매수"]
+                elif key_label == "기관":
+                    val += nxt_get(mkt, "기타", "기관종합")
+                elif key_label == "개인":
+                    val += nxt_get(mkt, "개인")
+                elif key_label == "외국인":
+                    val += nxt_get(mkt, "외국인")
+            return round(val / 1e12, 2)
 
-        labels_sum=["전체","개인","기관합계","외국인"]
-        krx_stock_tot={l: round(tot_krx(krx3,l,1e6),2)  for l in labels_sum}
-        krx_etf_tot  ={l: round(tot_krx(krx4,l,1e12),2) for l in labels_sum}
-        krx_tot      ={l: round(krx_stock_tot[l]+krx_etf_tot[l],2) for l in labels_sum}
-        nxt_sum      ={l: tot_nxt_upload(l) for l in labels_sum} if has_nxt else {l:0.0 for l in labels_sum}
-        grand_tot    ={l: round(krx_tot[l]+nxt_sum[l],2) for l in labels_sum}
+        krx_주식_전체  = round(tot_krx(krx3, "전체",   1e6), 2)
+        krx_주식_개인  = round(tot_krx(krx3, "개인",   1e6), 2)
+        krx_주식_기관  = round(tot_krx(krx3, "기관합계", 1e6), 2)
+        krx_주식_외국  = round(tot_krx(krx3, "외국인", 1e6), 2)
 
-        tbl_h = lambda title,df: (
+        nxt_전체 = nxt_total_val("전체")  if has_nxt else 0.0
+        nxt_개인 = nxt_total_val("개인")  if has_nxt else 0.0
+        nxt_기관 = nxt_total_val("기관")  if has_nxt else 0.0
+        nxt_외국 = nxt_total_val("외국인") if has_nxt else 0.0
+
+        tbl_h = lambda title, df: (
             f'<div class="krx-sub"><h5>{title}</h5>'
-            + df.to_html(classes="data-table",border=0,na_rep="-")
+            + df.to_html(classes="data-table", border=0, na_rep="-")
             + '</div>'
         )
 
-        df_cap=pd.DataFrame([{
-            "코스피(조원)":round(kospi,1),"코스닥(조원)":round(kosdaq,1),
-            "코넥스(조원)":round(konex,1),"ETF(조원)":round(etf,1),
-            "ETN(조원)":round(etn,1),"ELW(조원)":round(elw,1),
-        }],index=["시가총액"])
+        # ── 시가총액 테이블 ─────────────────────────────────────────────
+        df_cap1 = krx1.copy()  # krx_df1 원본 (시가총액)
+        df_cap2 = krx2.copy()  # krx_df2 원본 (ETP)
+        df_cap_summary = pd.DataFrame([{
+            "코스피": kospi, "코스닥": kosdaq, "코넥스": konex,
+            "ETF": etf, "ETN": etn, "ELW": elw, "전체합계": total_cap,
+        }], index=["시가총액(백만원)"])
 
-        summary_rows=[
-            {"구분":"KRX 주식","전체(조원)":krx_stock_tot["전체"],"개인(조원)":krx_stock_tot["개인"],"기관(조원)":krx_stock_tot["기관합계"],"외국인(조원)":krx_stock_tot["외국인"]},
-            {"구분":"KRX ETF" ,"전체(조원)":krx_etf_tot["전체"] ,"개인(조원)":krx_etf_tot["개인"] ,"기관(조원)":krx_etf_tot["기관합계"] ,"외국인(조원)":krx_etf_tot["외국인"]},
-            {"구분":"KRX 합계","전체(조원)":krx_tot["전체"]     ,"개인(조원)":krx_tot["개인"]     ,"기관(조원)":krx_tot["기관합계"]     ,"외국인(조원)":krx_tot["외국인"]},
+        # ── 거래대금 합계 요약 ──────────────────────────────────────────
+        nxt_period_label = _nxt_data["period"] or "업로드"
+        summary_rows = [
+            {"구분": "KRX 주식",
+             "전체(조원)": krx_주식_전체, "개인(조원)": krx_주식_개인,
+             "기관(조원)": krx_주식_기관, "외국인(조원)": krx_주식_외국},
         ]
         if has_nxt:
-            nxt_period=_nxt_data["period"] or "업로드"
-            summary_rows.append({"구분":f"NXT ({nxt_period})","전체(조원)":nxt_sum["전체"],"개인(조원)":nxt_sum["개인"],"기관(조원)":nxt_sum["기관합계"],"외국인(조원)":nxt_sum["외국인"]})
-            summary_rows.append({"구분":"KRX+NXT 합계","전체(조원)":grand_tot["전체"],"개인(조원)":grand_tot["개인"],"기관(조원)":grand_tot["기관합계"],"외국인(조원)":grand_tot["외국인"]})
-        df_summary=pd.DataFrame(summary_rows).set_index("구분")
+            summary_rows.append({
+                "구분": f"NXT ({nxt_period_label})",
+                "전체(조원)": nxt_전체, "개인(조원)": nxt_개인,
+                "기관(조원)": nxt_기관, "외국인(조원)": nxt_외국,
+            })
+            summary_rows.append({
+                "구분": "합계 (KRX주식+NXT)",
+                "전체(조원)": round(krx_주식_전체+nxt_전체, 2),
+                "개인(조원)": round(krx_주식_개인+nxt_개인, 2),
+                "기관(조원)": round(krx_주식_기관+nxt_기관, 2),
+                "외국인(조원)": round(krx_주식_외국+nxt_외국, 2),
+            })
+        df_summary = pd.DataFrame(summary_rows).set_index("구분")
 
-        period_label=f"{start_date}~{actual}"
+        period_label = f"{start_date}~{actual}"
         html_out = (
-            tbl_h(f"■ 시가총액 (기준일: {actual})", df_cap)
+            tbl_h(f"■ 시가총액 요약 (기준일: {actual}, 단위: 백만원)", df_cap_summary)
+            + tbl_h(f"■ 시가총액 원본 — krx_df1 (기준일: {actual})", df_cap1)
+            + tbl_h(f"■ ETP 시총 원본 — krx_df2 (기준일: {actual})", df_cap2)
             + tbl_h(f"■ 주식 거래대금 — KRX ({period_label}, 조원)", df_stock_detail)
             + tbl_h(f"■ ETF 거래대금 — KRX ({period_label}, 조원)", df_etf_detail)
         )
         if df_nxt_kospi is not None:
-            nxt_period=_nxt_data["period"] or "업로드"
-            html_out += tbl_h(f"■ NXT 거래대금 — 코스피 ({nxt_period}, 조원)", df_nxt_kospi)
+            html_out += tbl_h(f"■ NXT 거래대금 — 코스피 ({nxt_period_label}, 조원)", df_nxt_kospi)
         if df_nxt_kosdaq is not None:
-            html_out += tbl_h(f"■ NXT 거래대금 — 코스닥 ({nxt_period}, 조원)", df_nxt_kosdaq)
+            html_out += tbl_h(f"■ NXT 거래대금 — 코스닥 ({nxt_period_label}, 조원)", df_nxt_kosdaq)
         html_out += tbl_h(f"■ 거래대금 합계 요약 ({period_label}, 조원)", df_summary)
 
         _state["krx"]["data"]  = html_out
