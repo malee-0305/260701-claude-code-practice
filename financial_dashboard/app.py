@@ -566,24 +566,21 @@ def _krx_worker(start_date: str, end_date: str):
         krx1=ps(driver.page_source,"jsTable_MDCEASY002_0",
                 ["구분","회사수","종목수","상장주식수","자본금","시가총액"])
 
-        # 2) ETP 시총 — menuId=MDC03020101 직접 접근 (ETP 종합정보(일))
-        open_mdi(driver, wait, "MDC03020101")
-        ed(driver,wait,'//*[@id="trdDd"]','//*[@id="jsSearchButton"]',
-           'table#jsTable_MDCEASY007_0', actual)
-        krx2=ps(driver.page_source,"jsTable_MDCEASY007_0",
-                ["구분","운용사수","종목수","상장좌수","시가총액","순자산총액"])
-        # ETP 페이지 파싱 실패 시 이전 메뉴 방식으로 재시도
-        if krx2.empty:
-            open_mdi(driver,wait,"MDC0301")
-            time.sleep(2)
+        # 2) ETP 시총 — 증권상품 종합정보(일) [43001]
+        # menuId 후보를 순서대로 시도
+        etp_cols = ["구분","운용사수","종목수","상장좌수","시가총액","순자산총액"]
+        krx2 = pd.DataFrame(columns=etp_cols)
+        for etp_mid in ["MDC03010301", "MDC03010302", "MDC03020101", "MDC03020201"]:
             try:
-                sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[5]/ul/li[2]/div/div[1]/ul/li[3]/a')
-                sc(wait,By.XPATH,'//*[@id="jsMdiMenu"]/div[4]/ul/li[5]/ul/li[2]/div/div[1]/ul/li[3]/ul/li[1]/a')
-                ed(driver,wait,'//*[@id="trdDd"]','//*[@id="jsSearchButton"]',
+                open_mdi(driver, wait, etp_mid)
+                ed(driver, wait, '//*[@id="trdDd"]', '//*[@id="jsSearchButton"]',
                    'table#jsTable_MDCEASY007_0', actual)
-                krx2=ps(driver.page_source,"jsTable_MDCEASY007_0",
-                        ["구분","운용사수","종목수","상장좌수","시가총액","순자산총액"])
-            except Exception: pass
+                tmp = ps(driver.page_source, "jsTable_MDCEASY007_0", etp_cols)
+                if not tmp.empty:
+                    krx2 = tmp
+                    break
+            except Exception:
+                continue
 
         # 3) 주식 거래대금 (start_date ~ actual)
         open_mdi(driver,wait,"MDC0201")
