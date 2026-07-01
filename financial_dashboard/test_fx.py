@@ -3,8 +3,11 @@
 CMD에서: python test_fx.py
 """
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 import pandas as pd
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 DATE = "20260630"   # 조회일 (YYYYMMDD) — 원하는 날짜로 변경
@@ -32,7 +35,7 @@ def fetch_naver_fx(market_code: str, target_date: str, max_pages: int = 10):
     )
     for page in range(1, max_pages + 1):
         url = base_url + f"&page={page}"
-        r = requests.get(url, headers=HEADERS, timeout=10)
+        r = requests.get(url, headers=HEADERS, timeout=10, verify=False)
         soup = BeautifulSoup(r.text, "html.parser")
         rows = soup.select("table.tbl_exchange tbody tr")
         for row in rows:

@@ -141,8 +141,9 @@ def run_investing(end_date: str):
 # 2. 환율 (네이버 금융) — requests 기반, Selenium 불필요
 # ══════════════════════════════════════════════════════════════════════════════
 def run_fx(date: str):
-    import requests, pandas as pd
+    import requests, urllib3, pandas as pd
     from bs4 import BeautifulSoup
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -164,7 +165,7 @@ def run_fx(date: str):
                     f"?marketindexCd={market_code}")
         for page in range(1, max_pages + 1):
             chk("fx")
-            r = requests.get(base_url + f"&page={page}", headers=headers, timeout=10)
+            r = requests.get(base_url + f"&page={page}", headers=headers, timeout=10, verify=False)
             soup = BeautifulSoup(r.text, "html.parser")
             for row in soup.select("table.tbl_exchange tbody tr"):
                 cols = [td.get_text(strip=True) for td in row.find_all("td")]
