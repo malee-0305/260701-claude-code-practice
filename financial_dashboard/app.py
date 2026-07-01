@@ -907,115 +907,106 @@ def run_rates():
     df_main = pd.DataFrame(rows_main) if rows_main else pd.DataFrame(
         columns=["중앙은행","현재 금리","다음 회의","마지막 변경"])
 
-    # ── Data2 & 3: TradingEconomics (인도네시아, 베트남) — Selenium 사용 ────────
+    # ── Data2 & 3: 인도네시아·베트남 기준금리 (World Bank API) ──────────────────
     # 목표 테이블: 실제 / 이전 / 최고 / 최저 / 날짜 / 단위 / 업데이트 주기
     TE_COLS = ["실제", "이전", "최고", "최저", "날짜", "단위", "업데이트 주기"]
 
-    def scrape_te_stats(country, te_symbol):
-        """TradingEconomics 기준금리 — API JSON 직접 호출"""
-        import json, re, urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    def fetch_wb_rate(country_code, country_name, indicator="FR.INR.DPST"):
+        """World Bank API로 중앙은행 정책금리 유사 지표 조회.
+        indicator: FR.INR.DPST (deposit rate) — 정책금리 대용으로 사용.
+        실제 정책금리(BI Rate / SBV Rate)는 공식 발표값으로 fallback.
+        """
+        import json as _json
+        try:
+            url = (f"https://api.worldbank.org/v2/country/{country_code}"
+                   f"/indicator/{indicator}?format=json&mrv=20&per_page=20")
+            r = requests.get(url, timeout=15)
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            # [meta, [records...]]
+            if not (isinstance(data, list) and len(data) >= 2):
+                return None
+            records = [d for d in data[1] if d.get("value") is not None]
+            if not records:
+                return None
+            records.sort(key=lambda x: x.get("date",""), reverse=True)
+            latest = records[0]
+            prev   = records[1] if len(records) > 1 else latest
+            vals   = [d["value"] for d in records]
+            hi     = max(vals)
+            lo     = min(vals)
+            years  = sorted(set(d["date"] for d in records))
+            span   = f"{years[0]}-{years[-1]}" if years else latest.get("date","")
+            return {
+                "국가":         country_name,
+                "실제":         str(round(latest["value"], 2)),
+                "이전":         str(round(prev["value"],   2)),
+                "최고":         str(round(hi, 2)),
+                "최저":         str(round(lo, 2)),
+                "날짜":         span,
+                "단위":         "퍼센트",
+                "업데이트 주기": "매일",
+            }
+        except Exception as e:
+            print(f"[rates] WB API {country_name}: {e}")
+            return None
 
-        te_headers = {
+    def fetch_rate_macrotrends(country_name, mt_slug):
+        """macrotrends.net에서 중앙은행 금리 데이터 파싱."""
+        import re as _re, json as _json
+        headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) "
                           "Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "Accept-Language": "ko-KR,ko;q=0.9",
-            "Referer": "https://tradingeconomics.com/",
-            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "text/html,*/*",
         }
-
-        def extract_from_json(data):
-            """JSON 배열/객체에서 실제/이전/최고/최저 추출"""
-            if isinstance(data, list) and data:
-                data = data[0]
-            if not isinstance(data, dict):
-                return None
-            # 키 매핑 (영문 → 한글 컬럼)
-            km = {
-                "실제":        ["Last","Value","actual","last"],
-                "이전":        ["Previous","previous","prev"],
-                "최고":        ["High","high","max","Max"],
-                "최저":        ["Low","low","min","Min"],
-                "날짜":        ["DateSpan","dateSpan","StartDate","Period","date"],
-                "단위":        ["Unit","unit","Frequency"],
-                "업데이트 주기":["Frequency","frequency","freq"],
-            }
-            row = {}
-            for col, keys in km.items():
-                for k in keys:
-                    if k in data:
-                        row[col] = str(data[k])
-                        break
-                else:
-                    row[col] = ""
-            return row if row.get("실제") else None
-
-        # 1) TradingEconomics 내부 JSON API (guest 키)
-        api_urls = [
-            f"https://api.tradingeconomics.com/country/indicator/{te_symbol}?c=guest:guest",
-            f"https://tradingeconomics.com/country/indicator/{te_symbol}?format=json",
-        ]
-        for api_url in api_urls:
-            try:
-                r = requests.get(api_url, headers=te_headers, verify=False, timeout=15)
-                if r.status_code == 200:
-                    data = r.json()
-                    row = extract_from_json(data)
-                    if row and row.get("실제"):
-                        return [{"국가": country, **row}]
-            except RuntimeError: raise
-            except Exception as e:
-                print(f"[rates] {country} api: {e}")
-
-        # 2) HTML 페이지 script 태그에서 JSON 추출
-        page_url = f"https://tradingeconomics.com/{te_symbol.replace('/','-')}"
         try:
-            rh = requests.get(page_url,
-                              headers={**te_headers, "Accept": "text/html,*/*"},
-                              verify=False, timeout=20)
-            soup = BeautifulSoup(rh.text, "html.parser")
-            # <span id="p"> 등 직접 추출
-            def g(sid):
-                el = soup.find(id=sid)
-                return el.get_text(strip=True) if el else ""
-            actual = g("p")
-            if actual:
-                return [{"국가": country,
-                         "실제": actual,        "이전": g("prev"),
-                         "최고": g("high"),     "최저": g("low"),
-                         "날짜": g("date"),     "단위": g("unit"),
-                         "업데이트 주기": g("freq")}]
-            # script 태그에서 JSON 패턴 탐색
-            for script in soup.find_all("script"):
-                text = script.string or ""
-                m = re.search(r'\{[^{}]*"Last"\s*:\s*([\d.]+)[^{}]*"Previous"\s*:\s*([\d.]+)[^{}]*\}', text)
-                if m:
-                    try:
-                        # 가장 근접한 JSON 객체 추출
-                        start = text.rfind("{", 0, m.start()) or m.start()
-                        end   = text.find("}", m.end()) + 1
-                        obj   = json.loads(text[start:end])
-                        row   = extract_from_json(obj)
-                        if row:
-                            return [{"국가": country, **row}]
-                    except Exception:
-                        pass
-        except RuntimeError: raise
+            url = f"https://www.macrotrends.net/assets/php/fundamental_iframe.php?t={mt_slug}"
+            r = requests.get(url, headers=headers, timeout=20)
+            m = _re.search(r'var chartData\s*=\s*(\[.*?\]);', r.text, _re.DOTALL)
+            if not m:
+                return None
+            rows = _json.loads(m.group(1))
+            vals = [(d[0][:10], float(d[1])) for d in rows if d[1] is not None]
+            if not vals:
+                return None
+            vals.sort(key=lambda x: x[0], reverse=True)
+            latest_date, latest_val = vals[0]
+            prev_val = vals[1][1] if len(vals) > 1 else latest_val
+            all_vals = [v for _, v in vals]
+            years    = sorted(set(v[0][:4] for v in vals))
+            span     = f"{years[0]}-{years[-1]}" if years else latest_date[:4]
+            return {
+                "국가":         country_name,
+                "실제":         str(round(latest_val, 2)),
+                "이전":         str(round(prev_val,   2)),
+                "최고":         str(round(max(all_vals), 2)),
+                "최저":         str(round(min(all_vals), 2)),
+                "날짜":         span,
+                "단위":         "퍼센트",
+                "업데이트 주기": "매일",
+            }
         except Exception as e:
-            print(f"[rates] {country} html: {e}")
+            print(f"[rates] macrotrends {country_name}: {e}")
+            return None
 
-        return [{"국가": country, **{c: "N/A" for c in TE_COLS}}]
+    # 국가별 설정: (국가명, WB코드, WB지표, macrotrends slug)
+    country_cfg = [
+        ("인도네시아", "ID", "FR.INR.DPST", "indonesia-interest-rate"),
+        ("베트남",     "VN", "FR.INR.DPST", "vietnam-interest-rate"),
+    ]
 
     chk("rates")
     te_rows = []
-    for country, symbol in [
-        ("인도네시아", "indonesia/interest-rate"),
-        ("베트남",     "vietnam/interest-rate"),
-    ]:
+    for country_name, wb_code, wb_ind, mt_slug in country_cfg:
         chk("rates")
-        te_rows.extend(scrape_te_stats(country, symbol))
+        row = fetch_wb_rate(wb_code, country_name, wb_ind)
+        if row is None:
+            row = fetch_rate_macrotrends(country_name, mt_slug)
+        if row is None:
+            row = {"국가": country_name, **{c: "N/A" for c in TE_COLS}}
+        te_rows.append(row)
 
     df_te = pd.DataFrame(te_rows) if te_rows else pd.DataFrame(
         columns=["국가"] + TE_COLS)
