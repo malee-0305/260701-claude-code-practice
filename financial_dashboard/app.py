@@ -907,55 +907,69 @@ def run_rates():
     df_main = pd.DataFrame(rows_main) if rows_main else pd.DataFrame(
         columns=["중앙은행","현재 금리","다음 회의","마지막 변경"])
 
-    # ── Data2 & 3: TradingEconomics (인도네시아, 베트남) ─────────────────────
-    te_targets = [
-        ("인도네시아", "https://ko.tradingeconomics.com/indonesia/interest-rate"),
-        ("베트남",     "https://ko.tradingeconomics.com/vietnam/interest-rate"),
-    ]
+    # ── Data2 & 3: TradingEconomics (인도네시아, 베트남) — Selenium 사용 ────────
+    # 목표 테이블: 실제 / 이전 / 최고 / 최저 / 날짜 / 단위 / 업데이트 주기
+    TE_COLS = ["실제", "이전", "최고", "최저", "날짜", "단위", "업데이트 주기"]
 
-    te_rows = []
-    for country, url in te_targets:
-        chk("rates")
+    def scrape_te_stats(country, url):
+        """TradingEconomics 기준금리 페이지의 요약 통계 테이블 파싱"""
+        driver2 = None
         try:
-            r2 = requests.get(url, headers=headers, verify=False, timeout=20)
-            soup2 = BeautifulSoup(r2.text, "html.parser")
-
-            # 주요 지표 테이블 찾기
-            found = False
-            for table in soup2.find_all("table"):
-                tbody2 = table.find("tbody")
-                if not tbody2: continue
-                for row in tbody2.find_all("tr"):
+            driver2 = make_driver(headless=True)
+            driver2.get(url)
+            time.sleep(8)
+            soup = BeautifulSoup(driver2.page_source, "html.parser")
+            # 헤더가 TE_COLS와 일치하는 테이블 탐색
+            for tbl in soup.find_all("table"):
+                thead = tbl.find("thead")
+                if not thead:
+                    continue
+                ths = [th.get_text(strip=True) for th in thead.find_all("th")]
+                # 실제/이전/최고/최저 중 2개 이상 포함 시 해당 테이블로 판단
+                if sum(1 for c in ["실제","이전","최고","최저"] if c in ths) >= 2:
+                    tbody = tbl.find("tbody")
+                    if not tbody:
+                        continue
+                    for row in tbody.find_all("tr"):
+                        cols = [td.get_text(strip=True) for td in row.find_all("td")]
+                        if not any(cols):
+                            continue
+                        row_dict = {"국가": country}
+                        for i, h in enumerate(ths):
+                            row_dict[h] = cols[i] if i < len(cols) else ""
+                        return [row_dict]
+            # 헤더 탐색 실패 시: 첫 번째 tbody의 첫 행을 TE_COLS에 매핑
+            for tbl in soup.find_all("table"):
+                tbody = tbl.find("tbody")
+                if not tbody:
+                    continue
+                for row in tbody.find_all("tr"):
                     cols = [td.get_text(strip=True) for td in row.find_all("td")]
-                    if len(cols) >= 3:
-                        te_rows.append({
-                            "국가": country,
-                            "경제지표": cols[0] if len(cols)>0 else "",
-                            "GMT":      cols[1] if len(cols)>1 else "",
-                            "참고":     cols[2] if len(cols)>2 else "",
-                            "실제":     cols[3] if len(cols)>3 else "",
-                            "이전":     cols[4] if len(cols)>4 else "",
-                            "예측치":   cols[5] if len(cols)>5 else "",
-                        })
-                        found = True
-                if found: break
-
-            if not found:
-                # 현재 금리만 파싱
-                val_el = soup2.find("span", id="p")
-                val = val_el.get_text(strip=True) if val_el else "N/A"
-                te_rows.append({
-                    "국가": country, "경제지표": "기준금리",
-                    "GMT":"","참고":"","실제": val,"이전":"","예측치":""
-                })
+                    if len(cols) >= 4 and any(cols):
+                        row_dict = {"국가": country}
+                        for i, h in enumerate(TE_COLS):
+                            row_dict[h] = cols[i] if i < len(cols) else ""
+                        return [row_dict]
         except RuntimeError: raise
         except Exception as e:
-            te_rows.append({"국가": country,"경제지표": f"오류: {e}",
-                            "GMT":"","참고":"","실제":"","이전":"","예측치":""})
-            print(f"[rates] {country}: {e}")
+            print(f"[rates] {country} TE: {e}")
+        finally:
+            try:
+                if driver2: driver2.quit()
+            except Exception: pass
+        return [{"국가": country, **{c: "N/A" for c in TE_COLS}}]
+
+    chk("rates")
+    te_rows = []
+    for country, url in [
+        ("인도네시아", "https://ko.tradingeconomics.com/indonesia/interest-rate"),
+        ("베트남",     "https://ko.tradingeconomics.com/vietnam/interest-rate"),
+    ]:
+        chk("rates")
+        te_rows.extend(scrape_te_stats(country, url))
 
     df_te = pd.DataFrame(te_rows) if te_rows else pd.DataFrame(
-        columns=["국가","경제지표","GMT","참고","실제","이전","예측치"])
+        columns=["국가"] + TE_COLS)
 
     return df_main, df_te, None
 
@@ -979,7 +993,7 @@ def _run_section(sec, fn, *args):
                 import pandas as pd
                 html  = "<h4 style='margin-bottom:8px'>Investing.com 중앙은행 금리</h4>"
                 html += df_main.to_html(classes="data-table",border=0,na_rep="-",index=False)
-                html += "<h4 style='margin:14px 0 8px'>인도네시아·베트남 (TradingEconomics)</h4>"
+                html += "<h4 style='margin:14px 0 8px'>인도네시아·베트남 기준금리 (TradingEconomics)</h4>"
                 html += df_te.to_html(classes="data-table",border=0,na_rep="-",index=False)
                 _state[sec]["data"] = html
         else:
