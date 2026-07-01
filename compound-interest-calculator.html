@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>복리 계산기</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f4f8;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+      padding: 40px;
+      width: 100%;
+      max-width: 460px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      color: #1a202c;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #718096;
+      font-size: 0.9rem;
+      margin-bottom: 32px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #4a5568;
+      margin-bottom: 6px;
+    }
+
+    .input-wrap {
+      position: relative;
+    }
+
+    .input-wrap .unit {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #a0aec0;
+      font-size: 0.9rem;
+      pointer-events: none;
+    }
+
+    input[type="number"] {
+      width: 100%;
+      padding: 12px 44px 12px 14px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 1rem;
+      color: #2d3748;
+      transition: border-color 0.2s;
+      appearance: textfield;
+    }
+
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+    }
+
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #4299e1;
+    }
+
+    select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 1rem;
+      color: #2d3748;
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #4299e1;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #4299e1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #3182ce;
+    }
+
+    .result {
+      margin-top: 28px;
+      padding: 24px;
+      background: #ebf8ff;
+      border-radius: 12px;
+      display: none;
+    }
+
+    .result.visible {
+      display: block;
+    }
+
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 0.95rem;
+      color: #4a5568;
+      border-bottom: 1px solid #bee3f8;
+    }
+
+    .result-row:last-child {
+      border-bottom: none;
+    }
+
+    .result-row.total {
+      margin-top: 8px;
+      padding-top: 14px;
+      border-top: 2px solid #90cdf4;
+      border-bottom: none;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #2b6cb0;
+    }
+
+    .result-row span:last-child {
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>복리 계산기</h1>
+    <p class="subtitle">원금, 연이율, 기간을 입력하면 최종 금액을 계산합니다.</p>
+
+    <div class="form-group">
+      <label for="principal">원금</label>
+      <div class="input-wrap">
+        <input type="number" id="principal" placeholder="예: 1000000" min="0">
+        <span class="unit">원</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="rate">연이율</label>
+      <div class="input-wrap">
+        <input type="number" id="rate" placeholder="예: 5" min="0" step="0.01">
+        <span class="unit">%</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="years">기간</label>
+      <div class="input-wrap">
+        <input type="number" id="years" placeholder="예: 10" min="1">
+        <span class="unit">년</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="compound">복리 주기</label>
+      <select id="compound">
+        <option value="1">연 1회</option>
+        <option value="2">반기 1회 (연 2회)</option>
+        <option value="4">분기 1회 (연 4회)</option>
+        <option value="12" selected>월 1회 (연 12회)</option>
+        <option value="365">일 1회 (연 365회)</option>
+      </select>
+    </div>
+
+    <button onclick="calculate()">계산하기</button>
+
+    <div class="result" id="result">
+      <div class="result-row">
+        <span>원금</span>
+        <span id="r-principal"></span>
+      </div>
+      <div class="result-row">
+        <span>이자 수익</span>
+        <span id="r-interest"></span>
+      </div>
+      <div class="result-row total">
+        <span>최종 금액</span>
+        <span id="r-total"></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function calculate() {
+      const P = parseFloat(document.getElementById('principal').value);
+      const r = parseFloat(document.getElementById('rate').value) / 100;
+      const t = parseFloat(document.getElementById('years').value);
+      const n = parseFloat(document.getElementById('compound').value);
+
+      if (isNaN(P) || isNaN(r) || isNaN(t) || P < 0 || r < 0 || t <= 0) {
+        alert('올바른 값을 입력해 주세요.');
+        return;
+      }
+
+      const total = P * Math.pow(1 + r / n, n * t);
+      const interest = total - P;
+
+      const fmt = (v) => Math.round(v).toLocaleString('ko-KR') + '원';
+
+      document.getElementById('r-principal').textContent = fmt(P);
+      document.getElementById('r-interest').textContent = fmt(interest);
+      document.getElementById('r-total').textContent = fmt(total);
+
+      document.getElementById('result').classList.add('visible');
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') calculate();
+    });
+  </script>
+</body>
+</html>
