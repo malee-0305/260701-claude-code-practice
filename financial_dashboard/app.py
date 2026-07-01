@@ -729,13 +729,37 @@ def _krx_worker(start_date: str, end_date: str):
             + '</div>'
         )
 
-        # ── 시가총액 테이블 ─────────────────────────────────────────────
-        df_cap1 = krx1.copy()  # krx_df1 원본 (시가총액)
-        df_cap2 = krx2.copy()  # krx_df2 원본 (ETP)
-        df_cap_summary = pd.DataFrame([{
-            "코스피": kospi, "코스닥": kosdaq, "코넥스": konex,
-            "ETF": etf, "ETN": etn, "ELW": elw, "전체합계": total_cap,
-        }], index=["시가총액(백만원)"])
+        # ── 시가총액 테이블 (백만원 → 조원 변환) ───────────────────────
+        def to_trillion(df, cols):
+            """지정 컬럼을 백만원→조원으로 변환한 복사본 반환"""
+            d = df.copy()
+            for c in cols:
+                if c in d.columns:
+                    d[c] = d[c].apply(lambda x: round(tf(x)/1e6, 4) if str(x).strip() not in ("","nan","-") else "-")
+            return d
+
+        # krx_df1: 상장주식수, 자본금, 시가총액 → 조원
+        df_cap1 = to_trillion(krx1, ["상장주식수","자본금","시가총액"])
+        # krx_df2: 상장좌수, 시가총액, 순자산총액 → 조원
+        df_cap2 = to_trillion(krx2, ["상장좌수","시가총액","순자산총액"])
+
+        # 시가총액 요약: krx_df1 소계/합계 행에서 조원 값으로 직접 구성
+        def cap_조원(val): return round(val/1e6, 2)
+        df_cap_summary = pd.DataFrame([
+            {"구분":"코스피(소계)", "상장주식수(조원)": cap_조원(tf(subcap_rows.iloc[0]["상장주식수"])) if len(subcap_rows)>0 else "-",
+             "자본금(조원)": cap_조원(tf(subcap_rows.iloc[0]["자본금"])) if len(subcap_rows)>0 else "-",
+             "시가총액(조원)": cap_조원(kospi)},
+            {"구분":"코스닥(소계)", "상장주식수(조원)": cap_조원(tf(subcap_rows.iloc[1]["상장주식수"])) if len(subcap_rows)>1 else "-",
+             "자본금(조원)": cap_조원(tf(subcap_rows.iloc[1]["자본금"])) if len(subcap_rows)>1 else "-",
+             "시가총액(조원)": cap_조원(kosdaq)},
+            {"구분":"코넥스(주권)", "상장주식수(조원)": cap_조원(tf(konex_rows.iloc[-1]["상장주식수"])) if not konex_rows.empty else "-",
+             "자본금(조원)": cap_조원(tf(konex_rows.iloc[-1]["자본금"])) if not konex_rows.empty else "-",
+             "시가총액(조원)": cap_조원(konex)},
+            {"구분":"ETF", "상장주식수(조원)":"-", "자본금(조원)":"-", "시가총액(조원)": cap_조원(etf)},
+            {"구분":"ETN", "상장주식수(조원)":"-", "자본금(조원)":"-", "시가총액(조원)": cap_조원(etn)},
+            {"구분":"ELW", "상장주식수(조원)":"-", "자본금(조원)":"-", "시가총액(조원)": cap_조원(elw)},
+            {"구분":"전체합계", "상장주식수(조원)":"-", "자본금(조원)":"-", "시가총액(조원)": cap_조원(total_cap)},
+        ]).set_index("구분")
 
         # ── 거래대금 합계 요약 ──────────────────────────────────────────
         nxt_period_label = _nxt_data["period"] or "업로드"
@@ -761,9 +785,9 @@ def _krx_worker(start_date: str, end_date: str):
 
         period_label = f"{start_date}~{actual}"
         html_out = (
-            tbl_h(f"■ 시가총액 요약 (기준일: {actual}, 단위: 백만원)", df_cap_summary)
-            + tbl_h(f"■ 시가총액 원본 — krx_df1 (기준일: {actual})", df_cap1)
-            + tbl_h(f"■ ETP 시총 원본 — krx_df2 (기준일: {actual})", df_cap2)
+            tbl_h(f"■ 시가총액 요약 (기준일: {actual}, 단위: 조원)", df_cap_summary)
+            + tbl_h(f"■ 시가총액 원본 — krx_df1 (기준일: {actual}, 단위: 조원)", df_cap1)
+            + tbl_h(f"■ ETP 시총 원본 — krx_df2 (기준일: {actual}, 단위: 조원)", df_cap2)
             + tbl_h(f"■ 주식 거래대금 — KRX ({period_label}, 조원)", df_stock_detail)
             + tbl_h(f"■ ETF 거래대금 — KRX ({period_label}, 조원)", df_etf_detail)
         )
