@@ -911,118 +911,111 @@ def run_rates():
     # 목표 테이블: 실제 / 이전 / 최고 / 최저 / 날짜 / 단위 / 업데이트 주기
     TE_COLS = ["실제", "이전", "최고", "최저", "날짜", "단위", "업데이트 주기"]
 
-    def scrape_te_stats(country, url):
-        """TradingEconomics 기준금리 요약 통계 파싱
-        1) requests로 초기 HTML에서 span#p 등 추출 (서버사이드 렌더링 값)
-        2) 실패 시 영문 URL로 재시도
-        3) 최후 수단: Selenium non-headless (표시용 더미값 반환 방지)
-        """
-        import urllib3
+    def scrape_te_stats(country, te_symbol):
+        """TradingEconomics 기준금리 — API JSON 직접 호출"""
+        import json, re, urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         te_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) "
                           "Chrome/124.0.0.0 Safari/537.36",
-            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Referer": "https://ko.tradingeconomics.com/",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "ko-KR,ko;q=0.9",
+            "Referer": "https://tradingeconomics.com/",
+            "X-Requested-With": "XMLHttpRequest",
         }
 
-        def parse_soup(soup):
-            import re
-            # 방법1: span id 직접 추출
+        def extract_from_json(data):
+            """JSON 배열/객체에서 실제/이전/최고/최저 추출"""
+            if isinstance(data, list) and data:
+                data = data[0]
+            if not isinstance(data, dict):
+                return None
+            # 키 매핑 (영문 → 한글 컬럼)
+            km = {
+                "실제":        ["Last","Value","actual","last"],
+                "이전":        ["Previous","previous","prev"],
+                "최고":        ["High","high","max","Max"],
+                "최저":        ["Low","low","min","Min"],
+                "날짜":        ["DateSpan","dateSpan","StartDate","Period","date"],
+                "단위":        ["Unit","unit","Frequency"],
+                "업데이트 주기":["Frequency","frequency","freq"],
+            }
+            row = {}
+            for col, keys in km.items():
+                for k in keys:
+                    if k in data:
+                        row[col] = str(data[k])
+                        break
+                else:
+                    row[col] = ""
+            return row if row.get("실제") else None
+
+        # 1) TradingEconomics 내부 JSON API (guest 키)
+        api_urls = [
+            f"https://api.tradingeconomics.com/country/indicator/{te_symbol}?c=guest:guest",
+            f"https://tradingeconomics.com/country/indicator/{te_symbol}?format=json",
+        ]
+        for api_url in api_urls:
+            try:
+                r = requests.get(api_url, headers=te_headers, verify=False, timeout=15)
+                if r.status_code == 200:
+                    data = r.json()
+                    row = extract_from_json(data)
+                    if row and row.get("실제"):
+                        return [{"국가": country, **row}]
+            except RuntimeError: raise
+            except Exception as e:
+                print(f"[rates] {country} api: {e}")
+
+        # 2) HTML 페이지 script 태그에서 JSON 추출
+        page_url = f"https://tradingeconomics.com/{te_symbol.replace('/','-')}"
+        try:
+            rh = requests.get(page_url,
+                              headers={**te_headers, "Accept": "text/html,*/*"},
+                              verify=False, timeout=20)
+            soup = BeautifulSoup(rh.text, "html.parser")
+            # <span id="p"> 등 직접 추출
             def g(sid):
                 el = soup.find(id=sid)
                 return el.get_text(strip=True) if el else ""
             actual = g("p")
             if actual:
-                return {
-                    "실제": actual,        "이전": g("prev"),
-                    "최고": g("high"),     "최저": g("low"),
-                    "날짜": g("date"),     "단위": g("unit"),
-                    "업데이트 주기": g("freq"),
-                }
-            # 방법2: 헤더에 "실제" 또는 "Actual"이 있는 테이블 탐색
-            stat_keywords = {"실제","이전","최고","최저","Actual","Previous","High","Low"}
-            for tbl in soup.find_all("table"):
-                thead = tbl.find("thead") or tbl.find("tr")
-                if not thead: continue
-                ths = [th.get_text(strip=True) for th in thead.find_all(["th","td"])]
-                if not any(h in stat_keywords for h in ths): continue
-                tbody = tbl.find("tbody")
-                if not tbody: continue
-                for row in tbody.find_all("tr"):
-                    cols = [td.get_text(strip=True) for td in row.find_all("td")]
-                    if len(cols) < 4: continue
-                    # 날짜 형식(YYYY-MM-DD) 제외, 순수 숫자여야 함
-                    if re.match(r'^\d{4}-\d{2}-\d{2}', cols[0]): continue
-                    if not re.match(r'^[\d.]+$', cols[0].replace(",","")): continue
-                    return {
-                        "실제": cols[0], "이전": cols[1] if len(cols)>1 else "",
-                        "최고": cols[2] if len(cols)>2 else "",
-                        "최저": cols[3] if len(cols)>3 else "",
-                        "날짜": cols[4] if len(cols)>4 else "",
-                        "단위": cols[5] if len(cols)>5 else "",
-                        "업데이트 주기": cols[6] if len(cols)>6 else "",
-                    }
-            return None
-
-        # 1) requests — 한글 URL
-        try:
-            r = requests.get(url, headers=te_headers, verify=False, timeout=20)
-            soup = BeautifulSoup(r.text, "html.parser")
-            parsed = parse_soup(soup)
-            if parsed:
-                return [{"국가": country, **parsed}]
+                return [{"국가": country,
+                         "실제": actual,        "이전": g("prev"),
+                         "최고": g("high"),     "최저": g("low"),
+                         "날짜": g("date"),     "단위": g("unit"),
+                         "업데이트 주기": g("freq")}]
+            # script 태그에서 JSON 패턴 탐색
+            for script in soup.find_all("script"):
+                text = script.string or ""
+                m = re.search(r'\{[^{}]*"Last"\s*:\s*([\d.]+)[^{}]*"Previous"\s*:\s*([\d.]+)[^{}]*\}', text)
+                if m:
+                    try:
+                        # 가장 근접한 JSON 객체 추출
+                        start = text.rfind("{", 0, m.start()) or m.start()
+                        end   = text.find("}", m.end()) + 1
+                        obj   = json.loads(text[start:end])
+                        row   = extract_from_json(obj)
+                        if row:
+                            return [{"국가": country, **row}]
+                    except Exception:
+                        pass
         except RuntimeError: raise
         except Exception as e:
-            print(f"[rates] {country} requests: {e}")
-
-        # 2) requests — 영문 URL (ko. → 제거)
-        en_url = url.replace("https://ko.", "https://")
-        try:
-            r2 = requests.get(en_url, headers={**te_headers, "Accept-Language": "en-US,en;q=0.9"},
-                              verify=False, timeout=20)
-            soup2 = BeautifulSoup(r2.text, "html.parser")
-            parsed2 = parse_soup(soup2)
-            if parsed2:
-                return [{"국가": country, **parsed2}]
-        except RuntimeError: raise
-        except Exception as e:
-            print(f"[rates] {country} requests(en): {e}")
-
-        # 3) Selenium — 페이지 소스 덤프 후 파싱
-        driver2 = None
-        try:
-            driver2 = make_driver(headless=True)
-            driver2.execute_cdp_cmd("Network.setUserAgentOverride", {
-                "userAgent": te_headers["User-Agent"]
-            })
-            driver2.get(url)
-            time.sleep(15)
-            soup3 = BeautifulSoup(driver2.page_source, "html.parser")
-            parsed3 = parse_soup(soup3)
-            if parsed3:
-                return [{"국가": country, **parsed3}]
-        except RuntimeError: raise
-        except Exception as e:
-            print(f"[rates] {country} selenium: {e}")
-        finally:
-            try:
-                if driver2: driver2.quit()
-            except Exception: pass
+            print(f"[rates] {country} html: {e}")
 
         return [{"국가": country, **{c: "N/A" for c in TE_COLS}}]
 
     chk("rates")
     te_rows = []
-    for country, url in [
-        ("인도네시아", "https://ko.tradingeconomics.com/indonesia/interest-rate"),
-        ("베트남",     "https://ko.tradingeconomics.com/vietnam/interest-rate"),
+    for country, symbol in [
+        ("인도네시아", "indonesia/interest-rate"),
+        ("베트남",     "vietnam/interest-rate"),
     ]:
         chk("rates")
-        te_rows.extend(scrape_te_stats(country, url))
+        te_rows.extend(scrape_te_stats(country, symbol))
 
     df_te = pd.DataFrame(te_rows) if te_rows else pd.DataFrame(
         columns=["국가"] + TE_COLS)
