@@ -126,6 +126,17 @@
 
     .card-header-title { flex: 1; }
 
+    .card-header-title a {
+      color: #fff;
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(255,255,255,0.45);
+      transition: border-color 0.15s;
+    }
+    .card-header-title a:hover {
+      border-bottom-color: #fff;
+      text-decoration: none;
+    }
+
     .card-controls {
       display: flex;
       align-items: center;
@@ -225,7 +236,7 @@
       <!-- KRX -->
       <div class="card wide">
         <div class="card-header blue">
-          <span class="card-header-title">🏦 KRX 시가총액 &amp; 거래대금</span>
+          <span class="card-header-title"><a href="https://data.krx.co.kr/" target="_blank">🏦 KRX 시가총액 &amp; 거래대금</a></span>
           <div class="card-controls">
             <span id="krx-badge" class="status-badge badge-idle">대기</span>
             <button class="btn btn-primary btn-sm" onclick="runSection('krx')">조회</button>
@@ -251,7 +262,7 @@
       <!-- 채권수익률 -->
       <div class="card">
         <div class="card-header green">
-          <span class="card-header-title">📈 채권수익률 (채권정보센터)</span>
+          <span class="card-header-title"><a href="https://www.kofiabond.or.kr/" target="_blank">📈 채권수익률 (채권정보센터)</a></span>
           <div class="card-controls">
             <span id="bond-badge" class="status-badge badge-idle">대기</span>
             <button class="btn btn-primary btn-sm" onclick="runSection('bond')">조회</button>
@@ -264,7 +275,7 @@
       <!-- 환율 -->
       <div class="card">
         <div class="card-header orange">
-          <span class="card-header-title">💱 환율 (SMBS 기준환율)</span>
+          <span class="card-header-title"><a href="https://finance.naver.com/marketindex/" target="_blank">💱 환율 (SMBS 기준환율)</a></span>
           <div class="card-controls">
             <span id="fx-badge" class="status-badge badge-idle">대기</span>
             <button class="btn btn-primary btn-sm" onclick="runSection('fx')">조회</button>
@@ -277,7 +288,7 @@
       <!-- 콜금리 -->
       <div class="card">
         <div class="card-header purple">
-          <span class="card-header-title">🏛 콜금리 (한국은행 ECOS)</span>
+          <span class="card-header-title"><a href="https://ecos.bok.or.kr/" target="_blank">🏛 콜금리 (한국은행 ECOS)</a></span>
           <div class="card-controls">
             <span id="call-badge" class="status-badge badge-idle">대기</span>
             <button class="btn btn-primary btn-sm" onclick="runSection('call')">조회</button>
@@ -290,7 +301,7 @@
       <!-- Investing.com -->
       <div class="card wide">
         <div class="card-header teal">
-          <span class="card-header-title">🌐 글로벌 지수 &amp; 금리 &amp; 원자재 (Investing.com)</span>
+          <span class="card-header-title"><a href="https://kr.investing.com/" target="_blank">🌐 글로벌 지수 &amp; 금리 &amp; 원자재 (Investing.com)</a></span>
           <div class="card-controls">
             <span id="investing-badge" class="status-badge badge-idle">대기</span>
             <button class="btn btn-primary btn-sm" onclick="runSection('investing')">조회</button>
@@ -303,7 +314,7 @@
       <!-- 국가별 기준금리 -->
       <div class="card wide">
         <div class="card-header red">
-          <span class="card-header-title">🏦 국가별 기준 금리</span>
+          <span class="card-header-title"><a href="https://kr.investing.com/central-banks/" target="_blank">🏦 국가별 기준 금리</a></span>
           <div class="card-controls">
             <span id="rates-badge" class="status-badge badge-idle">대기</span>
             <button class="btn btn-primary btn-sm" onclick="runSection('rates')">조회</button>
