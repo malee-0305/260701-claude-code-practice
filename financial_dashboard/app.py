@@ -1223,15 +1223,12 @@ def api_krx_nxt_status():
 def api_download_excel():
     """전체 섹션 데이터를 Excel로 다운로드"""
     import io as _io
+    from bs4 import BeautifulSoup as _BS
     try:
         import openpyxl as _xl
         from openpyxl.styles import Font, PatternFill, Alignment
     except ImportError:
         return jsonify({"error":"openpyxl 필요: pip install openpyxl"}), 500
-    try:
-        import pandas as _pd
-    except ImportError:
-        return jsonify({"error":"pandas 필요"}), 500
 
     from flask import send_file
 
@@ -1251,38 +1248,79 @@ def api_download_excel():
     header_font = Font(color="FFFFFF", bold=True)
     title_font  = Font(bold=True, size=11)
 
+    def html_tables_to_sheet(ws, html, cur_row=1):
+        """HTML에서 <table> 태그를 모두 찾아 BeautifulSoup으로 직접 파싱해 시트에 기록"""
+        soup = _BS(html, "html.parser")
+
+        # h4/h5 제목과 table을 순서대로 처리
+        for el in soup.find_all(["h4", "h5", "table"]):
+            tag = el.name
+
+            if tag in ("h4", "h5"):
+                text = el.get_text(strip=True)
+                if text:
+                    cell = ws.cell(row=cur_row, column=1, value=text)
+                    cell.font = title_font
+                    cur_row += 1
+                continue
+
+            # <table> 처리
+            # 헤더 수집: thead의 모든 tr을 합쳐 다단 헤더 처리
+            headers = []
+            thead = el.find("thead")
+            if thead:
+                header_rows = thead.find_all("tr")
+                if len(header_rows) == 1:
+                    headers = [th.get_text(strip=True) for th in header_rows[0].find_all(["th","td"])]
+                else:
+                    # 다단 헤더: 마지막 행 우선 사용
+                    for hr in header_rows:
+                        row_vals = [th.get_text(strip=True) for th in hr.find_all(["th","td"])]
+                        if any(row_vals):
+                            headers = row_vals
+
+            # 헤더 없으면 첫 번째 tr에서 추출
+            if not headers:
+                first_row = el.find("tr")
+                if first_row:
+                    headers = [c.get_text(strip=True) for c in first_row.find_all(["th","td"])]
+
+            # 헤더 쓰기
+            if headers:
+                for c_idx, h in enumerate(headers, 1):
+                    cell = ws.cell(row=cur_row, column=c_idx, value=h)
+                    cell.font = header_font
+                    cell.fill = header_fill
+                    cell.alignment = Alignment(horizontal="center")
+                cur_row += 1
+
+            # tbody 데이터 쓰기
+            tbody = el.find("tbody") or el
+            for tr in tbody.find_all("tr"):
+                cells = tr.find_all(["td","th"])
+                if not cells:
+                    continue
+                for c_idx, td in enumerate(cells, 1):
+                    val = td.get_text(strip=True)
+                    # 숫자 변환 시도
+                    try:
+                        num = float(val.replace(",",""))
+                        ws.cell(row=cur_row, column=c_idx, value=num)
+                    except (ValueError, AttributeError):
+                        ws.cell(row=cur_row, column=c_idx, value=val)
+                cur_row += 1
+
+            cur_row += 2  # 테이블 간 여백
+
+        return cur_row
+
     for sec in SECTIONS:
         data = _state[sec].get("data")
         if not data:
             continue
         sheet_name = SECTION_NAMES.get(sec, sec)[:31]
         ws = wb.create_sheet(title=sheet_name)
-        cur_row = 1
-
-        try:
-            dfs = _pd.read_html(data, flavor="lxml")
-        except Exception:
-            try:
-                dfs = _pd.read_html(data)
-            except Exception:
-                ws.cell(row=1, column=1, value=str(data)[:200])
-                continue
-
-        for df in dfs:
-            df = df.fillna("")
-            # 컬럼 헤더
-            for c_idx, col in enumerate(df.columns, 1):
-                cell = ws.cell(row=cur_row, column=c_idx, value=str(col))
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.alignment = Alignment(horizontal="center")
-            cur_row += 1
-            # 데이터 행
-            for _, row in df.iterrows():
-                for c_idx, val in enumerate(row, 1):
-                    ws.cell(row=cur_row, column=c_idx, value=val)
-                cur_row += 1
-            cur_row += 2  # 테이블 간 빈 줄
+        html_tables_to_sheet(ws, data)
 
         # 열 너비 자동 조정
         for col in ws.columns:
