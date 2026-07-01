@@ -912,44 +912,78 @@ def run_rates():
     TE_COLS = ["실제", "이전", "최고", "최저", "날짜", "단위", "업데이트 주기"]
 
     def scrape_te_stats(country, url):
-        """TradingEconomics 기준금리 페이지의 요약 통계 테이블 파싱"""
+        """TradingEconomics 기준금리 요약 통계 파싱 (Selenium + JS 직접 추출)"""
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.by import By
         driver2 = None
         try:
             driver2 = make_driver(headless=True)
             driver2.get(url)
-            time.sleep(8)
-            soup = BeautifulSoup(driver2.page_source, "html.parser")
-            # 헤더가 TE_COLS와 일치하는 테이블 탐색
-            for tbl in soup.find_all("table"):
-                thead = tbl.find("thead")
-                if not thead:
-                    continue
-                ths = [th.get_text(strip=True) for th in thead.find_all("th")]
-                # 실제/이전/최고/최저 중 2개 이상 포함 시 해당 테이블로 판단
-                if sum(1 for c in ["실제","이전","최고","최저"] if c in ths) >= 2:
+            # 페이지 로딩 대기: #p (현재 금리 값) 요소가 나타날 때까지
+            try:
+                WebDriverWait(driver2, 20).until(
+                    EC.presence_of_element_located((By.ID, "p"))
+                )
+            except Exception:
+                time.sleep(12)
+
+            # JS로 핵심 값 직접 추출
+            def js_txt(selector):
+                try:
+                    return driver2.execute_script(
+                        f"var el=document.querySelector('{selector}'); return el?el.innerText.trim():'';"
+                    )
+                except Exception:
+                    return ""
+
+            actual   = js_txt("#p")
+            previous = js_txt("#prev")
+            high     = js_txt("#high")
+            low      = js_txt("#low")
+            date_rng = js_txt("#date")
+            unit     = js_txt("#unit")
+            freq     = js_txt("#freq")
+
+            # JS로 값이 안 오면 BeautifulSoup으로 탐색
+            if not actual:
+                soup = BeautifulSoup(driver2.page_source, "html.parser")
+                def bs_txt(sid):
+                    el = soup.find(id=sid)
+                    return el.get_text(strip=True) if el else ""
+                actual   = bs_txt("p")
+                previous = bs_txt("prev")
+                high     = bs_txt("high")
+                low      = bs_txt("low")
+                date_rng = bs_txt("date")
+                unit     = bs_txt("unit")
+                freq     = bs_txt("freq")
+
+            # 여전히 없으면 테이블 행 파싱 (마지막 수단)
+            if not actual:
+                soup = BeautifulSoup(driver2.page_source, "html.parser")
+                for tbl in soup.find_all("table"):
                     tbody = tbl.find("tbody")
                     if not tbody:
                         continue
                     for row in tbody.find_all("tr"):
                         cols = [td.get_text(strip=True) for td in row.find_all("td")]
-                        if not any(cols):
-                            continue
-                        row_dict = {"국가": country}
-                        for i, h in enumerate(ths):
-                            row_dict[h] = cols[i] if i < len(cols) else ""
-                        return [row_dict]
-            # 헤더 탐색 실패 시: 첫 번째 tbody의 첫 행을 TE_COLS에 매핑
-            for tbl in soup.find_all("table"):
-                tbody = tbl.find("tbody")
-                if not tbody:
-                    continue
-                for row in tbody.find_all("tr"):
-                    cols = [td.get_text(strip=True) for td in row.find_all("td")]
-                    if len(cols) >= 4 and any(cols):
-                        row_dict = {"국가": country}
-                        for i, h in enumerate(TE_COLS):
-                            row_dict[h] = cols[i] if i < len(cols) else ""
-                        return [row_dict]
+                        if len(cols) >= 4 and any(c.replace(".","").isdigit() for c in cols[:2]):
+                            actual, previous = cols[0], cols[1]
+                            high   = cols[2] if len(cols) > 2 else ""
+                            low    = cols[3] if len(cols) > 3 else ""
+                            date_rng = cols[4] if len(cols) > 4 else ""
+                            unit   = cols[5] if len(cols) > 5 else ""
+                            freq   = cols[6] if len(cols) > 6 else ""
+                            break
+                    if actual:
+                        break
+
+            return [{"국가": country,
+                     "실제": actual or "N/A", "이전": previous or "N/A",
+                     "최고": high or "N/A",   "최저": low or "N/A",
+                     "날짜": date_rng or "N/A","단위": unit or "N/A",
+                     "업데이트 주기": freq or "N/A"}]
         except RuntimeError: raise
         except Exception as e:
             print(f"[rates] {country} TE: {e}")
