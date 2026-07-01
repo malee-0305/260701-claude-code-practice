@@ -195,6 +195,7 @@
     </div>
     <button class="btn btn-primary" id="fetchAllBtn" onclick="startAll()">전체 조회</button>
     <button class="btn btn-danger"  id="stopAllBtn"  onclick="stopAll()" disabled>전체 중지</button>
+    <button class="btn" style="background:#276749;color:#fff;" onclick="downloadExcel()">⬇ 엑셀 다운로드</button>
     <div id="spinner"><div class="spin"></div> 수집 중...</div>
   </div>
 </header>
@@ -534,6 +535,10 @@
     const statusEl = document.getElementById('nxt-status-text');
     statusEl.textContent = '초기화됨 — KRX 데이터만 집계됩니다';
     statusEl.style.color = '#718096';
+  }
+
+  function downloadExcel() {
+    window.location.href = '/api/download-excel';
   }
 
   // 페이지 로드 시 NXT 상태 복원

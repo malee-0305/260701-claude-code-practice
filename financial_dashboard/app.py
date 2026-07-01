@@ -960,6 +960,18 @@ def _run_section(sec, fn, *args):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 영업일 조정 헬퍼
+# ══════════════════════════════════════════════════════════════════════════════
+def adjust_to_biz_day(date_str, direction="back"):
+    """주말이면 직전(back) 또는 직후(forward) 평일로 이동. 공휴일은 KRX가 알아서 처리."""
+    d = datetime.strptime(date_str, "%Y%m%d")
+    step = timedelta(days=-1) if direction == "back" else timedelta(days=1)
+    while d.weekday() >= 5:   # 5=토, 6=일
+        d += step
+    return d.strftime("%Y%m%d")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Flask 라우트
 # ══════════════════════════════════════════════════════════════════════════════
 @app.route("/")
@@ -978,6 +990,11 @@ def api_run(section):
 
     if not end_date or len(end_date)!=8:
         return jsonify({"error":"종료일 형식 오류"}), 400
+
+    # 주말이면 자동 조정: 종료일→직전 평일, 시작일→직후 평일
+    end_date   = adjust_to_biz_day(end_date,   direction="back")
+    if start_date and len(start_date)==8:
+        start_date = adjust_to_biz_day(start_date, direction="forward")
 
     if _state[section]["running"]:
         return jsonify({"error":"이미 실행 중"}), 409
@@ -1103,6 +1120,92 @@ def api_krx_nxt_status():
         "kosdaq_rows": len(_nxt_data["kosdaq"]),
         "period": _nxt_data["period"],
     })
+
+
+@app.route("/api/download-excel", methods=["GET"])
+def api_download_excel():
+    """전체 섹션 데이터를 Excel로 다운로드"""
+    import io as _io
+    try:
+        import openpyxl as _xl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        return jsonify({"error":"openpyxl 필요: pip install openpyxl"}), 500
+    try:
+        import pandas as _pd
+    except ImportError:
+        return jsonify({"error":"pandas 필요"}), 500
+
+    from flask import send_file
+
+    SECTION_NAMES = {
+        "krx":      "KRX 시가총액·거래대금",
+        "bond":     "채권수익률",
+        "fx":       "환율",
+        "call":     "콜금리",
+        "investing":"글로벌지수·금리·원자재",
+        "rates":    "국가별 기준금리",
+    }
+
+    wb = _xl.Workbook()
+    wb.remove(wb.active)
+
+    header_fill = PatternFill("solid", fgColor="2B6CB0")
+    header_font = Font(color="FFFFFF", bold=True)
+    title_font  = Font(bold=True, size=11)
+
+    for sec in SECTIONS:
+        data = _state[sec].get("data")
+        if not data:
+            continue
+        sheet_name = SECTION_NAMES.get(sec, sec)[:31]
+        ws = wb.create_sheet(title=sheet_name)
+        cur_row = 1
+
+        try:
+            dfs = _pd.read_html(data, flavor="lxml")
+        except Exception:
+            try:
+                dfs = _pd.read_html(data)
+            except Exception:
+                ws.cell(row=1, column=1, value=str(data)[:200])
+                continue
+
+        for df in dfs:
+            df = df.fillna("")
+            # 컬럼 헤더
+            for c_idx, col in enumerate(df.columns, 1):
+                cell = ws.cell(row=cur_row, column=c_idx, value=str(col))
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+            cur_row += 1
+            # 데이터 행
+            for _, row in df.iterrows():
+                for c_idx, val in enumerate(row, 1):
+                    ws.cell(row=cur_row, column=c_idx, value=val)
+                cur_row += 1
+            cur_row += 2  # 테이블 간 빈 줄
+
+        # 열 너비 자동 조정
+        for col in ws.columns:
+            max_len = max((len(str(c.value)) if c.value else 0) for c in col)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+
+    if not wb.sheetnames:
+        ws = wb.create_sheet("데이터없음")
+        ws.cell(row=1, column=1, value="조회된 데이터가 없습니다.")
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"금융지표_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=fname,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 
 if __name__ == "__main__":
