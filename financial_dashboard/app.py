@@ -369,6 +369,28 @@ def run_bond(date: str):
             "CD(91일)":      sf(kb_df3, 5, 6),
             "CP(91일)":      sf(kb_df2, 5, 6),
         }
+
+        # ── COFIX (코픽스) 신규잔액기준 ─────────────────────────────────────
+        chk("bond")
+        cofix_driver = None
+        try:
+            cofix_driver = make_driver(headless=True)
+            cofix_driver.get("https://portal.kfb.or.kr/fingoods/cofix.php")
+            cofix_driver.minimize_window()
+            time.sleep(6)
+            cofix_el = cofix_driver.find_element(
+                By.XPATH,
+                '//*[@id="Content"]/div[2]/div/div/div[3]/ul/li[1]/p[3]'
+            )
+            summary["COFIX(신규잔액)"] = cofix_el.text.strip().replace("%", "")
+        except Exception as e:
+            print(f"[bond] COFIX 수집 실패: {e}")
+            summary["COFIX(신규잔액)"] = None
+        finally:
+            try:
+                if cofix_driver: cofix_driver.quit()
+            except Exception: pass
+
         df = pd.DataFrame(list(summary.items()), columns=["종목", "수익률(%)"])
         return df.set_index("종목"), None
 
@@ -1265,7 +1287,10 @@ def api_download_excel():
                 continue
 
             # <table> 처리
-            # 헤더 수집: thead의 모든 tr을 합쳐 다단 헤더 처리
+            # 헤더 수집: pandas DataFrame HTML은 thead 2행 구조일 수 있음
+            # 1행: ["", "날짜", "종가", ...] (컬럼명, 인덱스 자리는 빈칸)
+            # 2행: ["지표", "", "", ...]     (인덱스명, 나머지 빈칸)
+            # → 합쳐서 ["지표", "날짜", "종가", ...]로 만들어야 함
             headers = []
             thead = el.find("thead")
             if thead:
@@ -1273,11 +1298,16 @@ def api_download_excel():
                 if len(header_rows) == 1:
                     headers = [th.get_text(strip=True) for th in header_rows[0].find_all(["th","td"])]
                 else:
-                    # 다단 헤더: 마지막 행 우선 사용
-                    for hr in header_rows:
-                        row_vals = [th.get_text(strip=True) for th in hr.find_all(["th","td"])]
-                        if any(row_vals):
-                            headers = row_vals
+                    # 다단 헤더 병합: 0번 컬럼=마지막행(인덱스명), 나머지=첫행(컬럼명)
+                    first = [th.get_text(strip=True) for th in header_rows[0].find_all(["th","td"])]
+                    last  = [th.get_text(strip=True) for th in header_rows[-1].find_all(["th","td"])]
+                    n = max(len(first), len(last))
+                    for i in range(n):
+                        f = first[i] if i < len(first) else ""
+                        l = last[i]  if i < len(last)  else ""
+                        # 인덱스 컬럼(0번): 마지막 행 값(인덱스명) 우선
+                        # 데이터 컬럼(1번~): 첫 행 값(컬럼명) 우선
+                        headers.append(l if i == 0 else (f or l))
 
             # 헤더 없으면 첫 번째 tr에서 추출
             if not headers:
