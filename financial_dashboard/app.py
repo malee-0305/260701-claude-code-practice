@@ -912,85 +912,96 @@ def run_rates():
     TE_COLS = ["실제", "이전", "최고", "최저", "날짜", "단위", "업데이트 주기"]
 
     def scrape_te_stats(country, url):
-        """TradingEconomics 기준금리 요약 통계 파싱 (Selenium + JS 직접 추출)"""
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.common.by import By
+        """TradingEconomics 기준금리 요약 통계 파싱
+        1) requests로 초기 HTML에서 span#p 등 추출 (서버사이드 렌더링 값)
+        2) 실패 시 영문 URL로 재시도
+        3) 최후 수단: Selenium non-headless (표시용 더미값 반환 방지)
+        """
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        te_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/124.0.0.0 Safari/537.36",
+            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": "https://ko.tradingeconomics.com/",
+        }
+
+        def parse_soup(soup):
+            def g(sid):
+                el = soup.find(id=sid)
+                return el.get_text(strip=True) if el else ""
+            actual = g("p")
+            if not actual:
+                return None
+            return {
+                "실제": actual,        "이전": g("prev"),
+                "최고": g("high"),     "최저": g("low"),
+                "날짜": g("date"),     "단위": g("unit"),
+                "업데이트 주기": g("freq"),
+            }
+
+        # 1) requests — 한글 URL
+        try:
+            r = requests.get(url, headers=te_headers, verify=False, timeout=20)
+            soup = BeautifulSoup(r.text, "html.parser")
+            parsed = parse_soup(soup)
+            if parsed:
+                return [{"국가": country, **parsed}]
+        except RuntimeError: raise
+        except Exception as e:
+            print(f"[rates] {country} requests: {e}")
+
+        # 2) requests — 영문 URL (ko. → 제거)
+        en_url = url.replace("https://ko.", "https://")
+        try:
+            r2 = requests.get(en_url, headers={**te_headers, "Accept-Language": "en-US,en;q=0.9"},
+                              verify=False, timeout=20)
+            soup2 = BeautifulSoup(r2.text, "html.parser")
+            parsed2 = parse_soup(soup2)
+            if parsed2:
+                return [{"국가": country, **parsed2}]
+        except RuntimeError: raise
+        except Exception as e:
+            print(f"[rates] {country} requests(en): {e}")
+
+        # 3) Selenium — 페이지 소스 덤프 후 파싱
         driver2 = None
         try:
             driver2 = make_driver(headless=True)
+            driver2.execute_cdp_cmd("Network.setUserAgentOverride", {
+                "userAgent": te_headers["User-Agent"]
+            })
             driver2.get(url)
-            # 페이지 로딩 대기: #p (현재 금리 값) 요소가 나타날 때까지
-            try:
-                WebDriverWait(driver2, 20).until(
-                    EC.presence_of_element_located((By.ID, "p"))
-                )
-            except Exception:
-                time.sleep(12)
-
-            # JS로 핵심 값 직접 추출
-            def js_txt(selector):
-                try:
-                    return driver2.execute_script(
-                        f"var el=document.querySelector('{selector}'); return el?el.innerText.trim():'';"
-                    )
-                except Exception:
-                    return ""
-
-            actual   = js_txt("#p")
-            previous = js_txt("#prev")
-            high     = js_txt("#high")
-            low      = js_txt("#low")
-            date_rng = js_txt("#date")
-            unit     = js_txt("#unit")
-            freq     = js_txt("#freq")
-
-            # JS로 값이 안 오면 BeautifulSoup으로 탐색
-            if not actual:
-                soup = BeautifulSoup(driver2.page_source, "html.parser")
-                def bs_txt(sid):
-                    el = soup.find(id=sid)
-                    return el.get_text(strip=True) if el else ""
-                actual   = bs_txt("p")
-                previous = bs_txt("prev")
-                high     = bs_txt("high")
-                low      = bs_txt("low")
-                date_rng = bs_txt("date")
-                unit     = bs_txt("unit")
-                freq     = bs_txt("freq")
-
-            # 여전히 없으면 테이블 행 파싱 (마지막 수단)
-            if not actual:
-                soup = BeautifulSoup(driver2.page_source, "html.parser")
-                for tbl in soup.find_all("table"):
-                    tbody = tbl.find("tbody")
-                    if not tbody:
-                        continue
-                    for row in tbody.find_all("tr"):
-                        cols = [td.get_text(strip=True) for td in row.find_all("td")]
-                        if len(cols) >= 4 and any(c.replace(".","").isdigit() for c in cols[:2]):
-                            actual, previous = cols[0], cols[1]
-                            high   = cols[2] if len(cols) > 2 else ""
-                            low    = cols[3] if len(cols) > 3 else ""
-                            date_rng = cols[4] if len(cols) > 4 else ""
-                            unit   = cols[5] if len(cols) > 5 else ""
-                            freq   = cols[6] if len(cols) > 6 else ""
-                            break
-                    if actual:
-                        break
-
-            return [{"국가": country,
-                     "실제": actual or "N/A", "이전": previous or "N/A",
-                     "최고": high or "N/A",   "최저": low or "N/A",
-                     "날짜": date_rng or "N/A","단위": unit or "N/A",
-                     "업데이트 주기": freq or "N/A"}]
+            time.sleep(15)
+            soup3 = BeautifulSoup(driver2.page_source, "html.parser")
+            parsed3 = parse_soup(soup3)
+            if parsed3:
+                return [{"국가": country, **parsed3}]
+            # 테이블 행에서 숫자 패턴으로 마지막 시도
+            for tbl in soup3.find_all("table"):
+                tbody = tbl.find("tbody")
+                if not tbody: continue
+                for row in tbody.find_all("tr"):
+                    cols = [td.get_text(strip=True) for td in row.find_all("td")]
+                    if len(cols) >= 4 and cols[0].replace(".","").replace("-","").isdigit():
+                        return [{"국가": country,
+                                 "실제": cols[0], "이전": cols[1] if len(cols)>1 else "",
+                                 "최고": cols[2] if len(cols)>2 else "",
+                                 "최저": cols[3] if len(cols)>3 else "",
+                                 "날짜": cols[4] if len(cols)>4 else "",
+                                 "단위": cols[5] if len(cols)>5 else "",
+                                 "업데이트 주기": cols[6] if len(cols)>6 else ""}]
         except RuntimeError: raise
         except Exception as e:
-            print(f"[rates] {country} TE: {e}")
+            print(f"[rates] {country} selenium: {e}")
         finally:
             try:
                 if driver2: driver2.quit()
             except Exception: pass
+
         return [{"국가": country, **{c: "N/A" for c in TE_COLS}}]
 
     chk("rates")
