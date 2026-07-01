@@ -138,90 +138,71 @@ def run_investing(end_date: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. 환율 (SMBS) — 원본 스크립트 기반 Selenium
+# 2. 환율 (네이버 금융) — requests 기반, Selenium 불필요
 # ══════════════════════════════════════════════════════════════════════════════
 def run_fx(date: str):
-    import pandas as pd
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait, Select
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.common.keys import Keys
+    import requests, pandas as pd
+    from bs4 import BeautifulSoup
 
-    driver = make_driver(headless=False)
-    wait   = WebDriverWait(driver, 25)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "Referer": "https://finance.naver.com/marketindex/",
+        "Accept-Language": "ko-KR,ko;q=0.9",
+    }
+
+    fx_codes = {
+        "달러(USD)": "FX_USDKRW",
+        "위안(CNY)": "FX_CNYKRW",
+        "엔(JPY)":   "FX_JPYKRW",
+    }
+
+    date_fmt = f"{date[:4]}.{date[4:6]}.{date[6:8]}"
+
+    def fetch_naver_fx(market_code, max_pages=10):
+        base_url = ("https://finance.naver.com/marketindex/exchangeDailyQuote.nhn"
+                    f"?marketindexCd={market_code}")
+        for page in range(1, max_pages + 1):
+            chk("fx")
+            r = requests.get(base_url + f"&page={page}", headers=headers, timeout=10)
+            soup = BeautifulSoup(r.text, "html.parser")
+            for row in soup.select("table.tbl_exchange tbody tr"):
+                cols = [td.get_text(strip=True) for td in row.find_all("td")]
+                if not cols: continue
+                if cols[0] == date_fmt:
+                    try: return float(cols[1].replace(",", ""))
+                    except: return None
+            last_els = soup.select("table.tbl_exchange tbody tr td:first-child")
+            if last_els:
+                last = last_els[-1].get_text(strip=True)
+                if last and last < date_fmt:
+                    break
+        return None
+
     results = []
-
-    def set_value_force(el, value):
+    for name, code in fx_codes.items():
+        chk("fx")
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            el.click()
-            el.send_keys(Keys.CONTROL, "a")
-            el.send_keys(Keys.DELETE)
-            el.send_keys(value)
-        except Exception:
-            driver.execute_script(
-                "var el=arguments[0],val=arguments[1];"
-                "el.value=val;"
-                "el.dispatchEvent(new Event('input',{bubbles:true}));"
-                "el.dispatchEvent(new Event('change',{bubbles:true}));",
-                el, value)
+            val = fetch_naver_fx(code)
+        except RuntimeError: raise
+        except Exception as e:
+            print(f"[fx] {name}: {e}"); val = None
+        results.append({"통화": name, "값(원)": val})
 
-    select_xpath = '//*[@id="frm_SearchDate"]/div[1]/table/tbody/tr[1]/td/select'
-    search_xpath = '//*[@id="frm_SearchDate"]/p[2]/a[2]/img'
-    rate_xpath   = '//*[@id="frm_SearchDate"]/div[6]/table/tbody/tr/td[1]'
-
-    # 달러(0), 위안화(1), 엔화(3)
-    currencies = [("달러(USD)", 0), ("위안(CNY)", 1), ("엔(JPY)", 3)]
+    df = pd.DataFrame(results).set_index("통화")
+    df["값(원)"] = pd.to_numeric(df["값(원)"], errors="coerce")
 
     try:
-        chk("fx")
-        driver.get("http://www.smbs.biz/ExRate/StdExRate.jsp")
-        time.sleep(3)
+        usd = df.loc["달러(USD)", "값(원)"]
+        cny = df.loc["위안(CNY)", "값(원)"]
+        jpy = df.loc["엔(JPY)",   "값(원)"]
+        if pd.notna(usd) and pd.notna(cny) and cny != 0:
+            df.loc["위안/달러", "값(원)"] = round(usd / cny, 4)
+        if pd.notna(usd) and pd.notna(jpy) and jpy != 0:
+            df.loc["엔/달러",   "값(원)"] = round(usd / (jpy / 100), 4)
+    except Exception: pass
 
-        start_box = wait.until(EC.element_to_be_clickable((By.ID, "startDate")))
-        end_box   = wait.until(EC.element_to_be_clickable((By.ID, "endDate")))
-        set_value_force(start_box, date)
-        set_value_force(end_box,   date)
-
-        for currency, option_index in currencies:
-            chk("fx")
-            try:
-                sel_el   = wait.until(EC.element_to_be_clickable((By.XPATH, select_xpath)))
-                Select(sel_el).select_by_index(option_index)
-
-                search_btn = wait.until(EC.element_to_be_clickable((By.XPATH, search_xpath)))
-                driver.execute_script("arguments[0].click();", search_btn)
-                time.sleep(2)
-
-                rate_cell = wait.until(EC.presence_of_element_located((By.XPATH, rate_xpath)))
-                txt = rate_cell.text.strip().replace(",", "")
-                val = float(txt) if txt else None
-            except RuntimeError: raise
-            except Exception as e:
-                print(f"[fx] {currency}: {e}")
-                val = None
-            results.append({"통화": currency, "값(원)": val})
-
-        df = pd.DataFrame(results).set_index("통화")
-        df["값(원)"] = pd.to_numeric(df["값(원)"], errors="coerce")
-
-        try:
-            usd = df.loc["달러(USD)", "값(원)"]
-            cny = df.loc["위안(CNY)", "값(원)"]
-            jpy = df.loc["엔(JPY)",   "값(원)"]
-            if pd.notna(usd) and pd.notna(cny) and cny != 0:
-                df.loc["위안/달러", "값(원)"] = round(usd / cny, 4)
-            if pd.notna(usd) and pd.notna(jpy) and jpy != 0:
-                df.loc["엔/달러",   "값(원)"] = round(usd / (jpy / 100), 4)
-        except Exception: pass
-
-        return df, None
-    except RuntimeError: raise
-    except Exception as e:
-        return None, str(e)
-    finally:
-        try: driver.quit()
-        except Exception: pass
+    return df, None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
