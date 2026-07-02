@@ -142,86 +142,122 @@ def run_investing(end_date: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. 환율 (네이버 금융) — requests 기반, Selenium 불필요
+# 2. 환율 (SMBS 기준환율) — Selenium 기반
 # ══════════════════════════════════════════════════════════════════════════════
 def run_fx(date: str):
-    import requests, urllib3, pandas as pd
+    import pandas as pd
     from bs4 import BeautifulSoup
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-        "Referer": "https://finance.naver.com/marketindex/",
-        "Accept-Language": "ko-KR,ko;q=0.9",
-    }
+    # SMBS 기준환율 페이지 후보 URL
+    SMBS_URLS = [
+        "http://www.smbs.biz/Exchange/StdExchange.jsp",
+        "http://www.smbs.biz/",
+    ]
 
-    fx_codes = {
-        "달러(USD)": "FX_USDKRW",
-        "위안(CNY)": "FX_CNYKRW",
-        "엔(JPY)":   "FX_JPYKRW",
-    }
-
-    date_fmt = f"{date[:4]}.{date[4:6]}.{date[6:8]}"
-
-    def fetch_naver_fx(market_code, max_pages=10):
-        base_url = ("https://finance.naver.com/marketindex/exchangeDailyQuote.nhn"
-                    f"?marketindexCd={market_code}")
-        sess = requests.Session()
-        sess.verify = False
-        sess.headers.update(headers)
-        for page in range(1, max_pages + 1):
-            chk("fx")
-            r = sess.get(base_url + f"&page={page}", timeout=15)
-            soup = BeautifulSoup(r.text, "html.parser")
-            rows = soup.select("table.tbl_exchange tbody tr")
-            if not rows:
-                # 테이블 구조가 바뀐 경우 모든 테이블 시도
-                for tbl in soup.find_all("table"):
-                    tb = tbl.find("tbody")
-                    if tb:
-                        rows = tb.find_all("tr")
-                        if rows: break
-            for row in rows:
-                cols = [td.get_text(strip=True) for td in row.find_all("td")]
-                if len(cols) < 2: continue
-                if cols[0] == date_fmt:
-                    try: return float(cols[1].replace(",", ""))
-                    except: return None
-            # 마지막 날짜 확인
-            date_cells = [td.get_text(strip=True)
-                         for row in rows
-                         for td in [row.find("td")]
-                         if td]
-            if date_cells and date_cells[-1] < date_fmt:
-                break
-        return None
-
-    results = []
-    for name, code in fx_codes.items():
-        chk("fx")
-        try:
-            val = fetch_naver_fx(code)
-            print(f"[fx] {name}: {val}")
-        except RuntimeError: raise
-        except Exception as e:
-            print(f"[fx] {name} 오류: {e}"); val = None
-        results.append({"통화": name, "값(원)": val})
-
-    df = pd.DataFrame(results).set_index("통화")
-    df["값(원)"] = pd.to_numeric(df["값(원)"], errors="coerce")
-
+    driver = None
     try:
-        usd = df.loc["달러(USD)", "값(원)"]
-        cny = df.loc["위안(CNY)", "값(원)"]
-        jpy = df.loc["엔(JPY)",   "값(원)"]
-        if pd.notna(usd) and pd.notna(cny) and cny != 0:
-            df.loc["위안/달러", "값(원)"] = round(usd / cny, 4)
-        if pd.notna(usd) and pd.notna(jpy) and jpy != 0:
-            df.loc["엔/달러",   "값(원)"] = round(usd / (jpy / 100), 4)
-    except Exception: pass
+        driver = make_driver(headless=True)
+        wait = WebDriverWait(driver, 30)
 
-    return df, None
+        html = None
+        for url in SMBS_URLS:
+            try:
+                driver.get(url)
+                time.sleep(4)
+                # 테이블이 로드될 때까지 대기
+                try:
+                    wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+                except Exception:
+                    pass
+                html = driver.page_source
+                soup = BeautifulSoup(html, "html.parser")
+                # 환율 데이터가 있는 테이블 탐색
+                tables = soup.find_all("table")
+                found = False
+                for tbl in tables:
+                    txt = tbl.get_text()
+                    if "USD" in txt or "달러" in txt or "JPY" in txt:
+                        found = True
+                        break
+                if found:
+                    break
+            except Exception as e:
+                print(f"[fx] SMBS URL 시도 실패 ({url}): {e}")
+                continue
+
+        if not html:
+            raise RuntimeError("SMBS 페이지 로드 실패")
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 환율 매핑: SMBS 테이블에서 통화코드/통화명 → 값 추출
+        currency_map = {
+            "USD": "달러(USD)",
+            "CNY": "위안(CNY)",
+            "JPY": "엔(JPY)",
+            "달러": "달러(USD)",
+            "위안": "위안(CNY)",
+            "엔":   "엔(JPY)",
+        }
+
+        extracted = {}  # {"달러(USD)": 1548.0, ...}
+
+        for tbl in soup.find_all("table"):
+            rows = tbl.find_all("tr")
+            for row in rows:
+                cells = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
+                if len(cells) < 2:
+                    continue
+                for key, label in currency_map.items():
+                    if label in extracted:
+                        continue
+                    # 셀 중 통화코드/명 포함 여부 확인
+                    matched = any(key in c for c in cells)
+                    if not matched:
+                        continue
+                    # 숫자 값 찾기 (소수점 포함, 쉼표 허용)
+                    for c in cells:
+                        clean = c.replace(",", "").strip()
+                        try:
+                            val = float(clean)
+                            if val > 1:  # 환율은 1 이상
+                                extracted[label] = val
+                                break
+                        except ValueError:
+                            continue
+
+        print(f"[fx] SMBS 추출 결과: {extracted}")
+
+        # 결과 DataFrame 구성
+        order = ["달러(USD)", "위안(CNY)", "엔(JPY)"]
+        results = [{"통화": k, "값(원)": extracted.get(k)} for k in order]
+
+        df = pd.DataFrame(results).set_index("통화")
+        df["값(원)"] = pd.to_numeric(df["값(원)"], errors="coerce")
+
+        # 위안/달러, 엔/달러 계산
+        try:
+            usd = df.loc["달러(USD)", "값(원)"]
+            cny = df.loc["위안(CNY)", "값(원)"]
+            jpy = df.loc["엔(JPY)",   "값(원)"]
+            if pd.notna(usd) and pd.notna(cny) and cny != 0:
+                df.loc["위안/달러", "값(원)"] = round(usd / cny, 4)
+            if pd.notna(usd) and pd.notna(jpy) and jpy != 0:
+                df.loc["엔/달러",   "값(원)"] = round(usd / (jpy / 100), 4)
+        except Exception:
+            pass
+
+        return df, None
+
+    finally:
+        try:
+            if driver:
+                driver.quit()
+        except Exception:
+            pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
