@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영어 자판연습</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+    background: #f0f4f8;
+    min-height: 100vh;
+    padding: 24px 16px;
+    color: #2d3748;
+  }
+
+  .wrap {
+    max-width: 780px;
+    margin: 0 auto;
+  }
+
+  header {
+    margin-bottom: 24px;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    color: #1a202c;
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    color: #718096;
+    font-size: 0.9rem;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+
+  .card h2 {
+    font-size: 1.05rem;
+    color: #1a202c;
+    margin-bottom: 16px;
+  }
+
+  /* Upload */
+  .upload-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .file-btn {
+    display: inline-block;
+    background: #4299e1;
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: none;
+  }
+
+  .file-btn:hover { background: #3182ce; }
+  .file-btn input { display: none; }
+
+  #uploadStatus {
+    font-size: 0.85rem;
+    color: #718096;
+  }
+
+  #uploadStatus.error { color: #e53e3e; }
+  #uploadStatus.ok { color: #38a169; }
+
+  /* Library list */
+  .doc-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .doc-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    transition: border-color 0.15s;
+  }
+
+  .doc-item:hover { border-color: #90cdf4; }
+
+  .doc-info { min-width: 0; flex: 1; }
+
+  .doc-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #2d3748;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .doc-meta {
+    font-size: 0.78rem;
+    color: #a0aec0;
+    margin-top: 2px;
+  }
+
+  .doc-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+  .btn {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 7px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, opacity 0.2s;
+  }
+
+  .btn-primary { background: #4299e1; color: #fff; }
+  .btn-primary:hover { background: #3182ce; }
+
+  .btn-secondary { background: #edf2f7; color: #4a5568; }
+  .btn-secondary:hover { background: #e2e8f0; }
+
+  .btn-danger { background: #fff5f5; color: #e53e3e; }
+  .btn-danger:hover { background: #fed7d7; }
+
+  .empty-msg {
+    color: #a0aec0;
+    font-size: 0.88rem;
+    text-align: center;
+    padding: 20px 0;
+  }
+
+  /* Setup */
+  .setup-doc-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #2b6cb0;
+    margin-bottom: 4px;
+  }
+
+  .setup-doc-meta {
+    font-size: 0.82rem;
+    color: #718096;
+    margin-bottom: 20px;
+  }
+
+  .mode-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .mode-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .mode-option:hover { border-color: #90cdf4; }
+  .mode-option.selected { border-color: #4299e1; background: #ebf8ff; }
+
+  .mode-option input { margin-top: 3px; }
+
+  .mode-option .mo-title { font-weight: 600; font-size: 0.92rem; color: #2d3748; }
+  .mode-option .mo-desc { font-size: 0.8rem; color: #a0aec0; margin-top: 2px; }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    color: #4a5568;
+    margin-bottom: 20px;
+  }
+
+  .setup-actions { display: flex; gap: 10px; }
+  .setup-actions .btn { flex: 1; padding: 13px; font-size: 0.92rem; }
+
+  /* Practice */
+  .stats-bar {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    background: #fff;
+    border-radius: 10px;
+    padding: 10px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    text-align: center;
+    flex: 1;
+    min-width: 80px;
+  }
+
+  .stat .val { font-size: 1.25rem; font-weight: 700; color: #2b6cb0; }
+  .stat .lbl { font-size: 0.72rem; color: #a0aec0; margin-top: 2px; }
+
+  .progress-track {
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: #4299e1;
+    width: 0%;
+    transition: width 0.2s;
+  }
+
+  .target-text {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 1.35rem;
+    line-height: 1.9;
+    letter-spacing: 0.5px;
+    padding: 24px;
+    background: #f7fafc;
+    border-radius: 12px;
+    margin-bottom: 18px;
+    word-break: break-word;
+    user-select: none;
+  }
+
+  .target-text .ch { color: #a0aec0; }
+  .target-text .ch.correct { color: #2d3748; }
+  .target-text .ch.incorrect { color: #e53e3e; background: #fed7d7; border-radius: 2px; }
+  .target-text .ch.current { border-left: 2px solid #4299e1; }
+  .target-text .ch.space.incorrect { background: #fc8181; }
+
+  #typeInput {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 1.1rem;
+    margin-bottom: 16px;
+  }
+
+  #typeInput:focus { outline: none; border-color: #4299e1; }
+  #typeInput.done { border-color: #38a169; background: #f0fff4; }
+
+  .practice-actions { display: flex; gap: 10px; }
+  .practice-actions .btn { flex: 1; padding: 12px; font-size: 0.88rem; }
+
+  .hint {
+    font-size: 0.78rem;
+    color: #a0aec0;
+    text-align: center;
+    margin-top: 10px;
+  }
+
+  /* Result modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(26,32,44,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 10;
+  }
+
+  .modal {
+    background: #fff;
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+  }
+
+  .modal h2 { font-size: 1.3rem; margin-bottom: 20px; color: #1a202c; }
+
+  .modal-stats {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 24px;
+  }
+
+  .modal-stats .val { font-size: 1.6rem; font-weight: 700; color: #2b6cb0; }
+  .modal-stats .lbl { font-size: 0.78rem; color: #a0aec0; margin-top: 4px; }
+
+  .modal-actions { display: flex; gap: 10px; }
+  .modal-actions .btn { flex: 1; padding: 13px; font-size: 0.9rem; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>영어 자판연습</h1>
+    <p class="subtitle">PDF를 업로드하면 그 안의 문장으로 타자 연습을 할 수 있어요.</p>
+  </header>
+
+  <!-- Screen 1: Library -->
+  <div id="screenLibrary">
+    <div class="card">
+      <h2>PDF 업로드</h2>
+      <div class="upload-row">
+        <label class="file-btn">
+          PDF 선택
+          <input type="file" id="fileInput" accept="application/pdf,.pdf">
+        </label>
+        <span id="uploadStatus"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>연습 자료 목록</h2>
+      <ul class="doc-list" id="docList"></ul>
+      <p class="empty-msg hidden" id="emptyMsg">업로드된 PDF가 없어요. 위에서 PDF를 추가해 보세요.</p>
+    </div>
+  </div>
+
+  <!-- Screen 2: Setup -->
+  <div id="screenSetup" class="hidden">
+    <div class="card">
+      <div class="setup-doc-name" id="setupDocName"></div>
+      <div class="setup-doc-meta" id="setupDocMeta"></div>
+
+      <div class="mode-options">
+        <label class="mode-option" data-mode="sentence">
+          <input type="radio" name="mode" value="sentence" checked>
+          <div>
+            <div class="mo-title">문장 단위 연습</div>
+            <div class="mo-desc">PDF에서 추출한 문장을 하나씩 순서대로 연습합니다.</div>
+          </div>
+        </label>
+        <label class="mode-option" data-mode="chunk">
+          <input type="radio" name="mode" value="chunk">
+          <div>
+            <div class="mo-title">긴 지문 이어치기</div>
+            <div class="mo-desc">문장 구분 없이 본문을 일정 길이로 잘라 이어서 연습합니다.</div>
+          </div>
+        </label>
+      </div>
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="shuffleCheck">
+        무작위 순서로 연습하기
+      </label>
+
+      <div class="setup-actions">
+        <button class="btn btn-secondary" onclick="goToLibrary()">목록으로</button>
+        <button class="btn btn-primary" onclick="startPractice()">연습 시작</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen 3: Practice -->
+  <div id="screenPractice" class="hidden">
+    <div class="stats-bar">
+      <div class="stat"><div class="val" id="statWpm">0</div><div class="lbl">WPM</div></div>
+      <div class="stat"><div class="val" id="statAcc">100%</div><div class="lbl">정확도</div></div>
+      <div class="stat"><div class="val" id="statTime">0:00</div><div class="lbl">시간</div></div>
+      <div class="stat"><div class="val" id="statProgress">0/0</div><div class="lbl">진행</div></div>
+    </div>
+
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+
+    <div class="card">
+      <div class="target-text" id="targetText"></div>
+      <input type="text" id="typeInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="여기에 입력을 시작하세요...">
+      <div class="practice-actions">
+        <button class="btn btn-secondary" onclick="skipItem()">건너뛰기</button>
+        <button class="btn btn-danger" onclick="quitPractice()">그만하기</button>
+      </div>
+      <p class="hint">첫 글자를 입력하면 타이머가 시작됩니다.</p>
+    </div>
+  </div>
+
+  <!-- Result modal -->
+  <div class="modal-overlay hidden" id="resultModal">
+    <div class="modal">
+      <h2 id="resultTitle">연습 완료!</h2>
+      <div class="modal-stats">
+        <div><div class="val" id="resultWpm">0</div><div class="lbl">WPM</div></div>
+        <div><div class="val" id="resultAcc">0%</div><div class="lbl">정확도</div></div>
+        <div><div class="val" id="resultCount">0</div><div class="lbl">완료 개수</div></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModalToLibrary()">목록으로</button>
+        <button class="btn btn-primary" onclick="closeModalRestart()">다시 연습</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as pdfjsLib from './pdfjs/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = './pdfjs/pdf.worker.min.mjs';
+
+const STORAGE_KEY = 'typingPracticeDocs';
+const MIN_SENTENCE_LEN = 25;
+const MAX_SENTENCE_LEN = 220;
+const CHUNK_LEN = 180;
+
+let docs = loadDocs();
+let currentDoc = null;
+let items = [];        // array of strings to practice, in current order
+let itemIndex = 0;
+let sessionCount = 0;
+let sessionCorrectChars = 0;
+let sessionTypedChars = 0;
+let startTime = null;
+let timerInterval = null;
+let prevInputValue = '';
+
+// ---------- Storage ----------
+
+function loadDocs() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveDocs() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
+  } catch (e) {
+    setUploadStatus('저장 공간이 부족해요. 오래된 자료를 삭제해 주세요.', 'error');
+  }
+}
+
+// ---------- PDF upload & text extraction ----------
+
+const fileInput = document.getElementById('fileInput');
+fileInput.addEventListener('change', handleFileUpload);
+
+function setUploadStatus(msg, type) {
+  const el = document.getElementById('uploadStatus');
+  el.textContent = msg;
+  el.className = type || '';
+}
+
+async function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    setUploadStatus('PDF 파일만 업로드할 수 있어요.', 'error');
+    return;
+  }
+
+  setUploadStatus('PDF를 분석하는 중...', '');
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const text = await extractPdfText(buffer);
+    const sentences = splitSentences(text);
+
+    if (sentences.length === 0) {
+      setUploadStatus('이 PDF에서 연습할 만한 영어 문장을 찾지 못했어요.', 'error');
+      return;
+    }
+
+    const doc = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      name: file.name.replace(/\.pdf$/i, ''),
+      addedAt: new Date().toISOString(),
+      text: text.slice(0, 300000),
+      sentences: sentences
+    };
+
+    docs.unshift(doc);
+    saveDocs();
+    renderLibrary();
+    setUploadStatus(`"${doc.name}" 추가 완료 (문장 ${sentences.length}개)`, 'ok');
+  } catch (err) {
+    console.error(err);
+    setUploadStatus('PDF를 읽는 중 오류가 발생했어요.', 'error');
+  } finally {
+    fileInput.value = '';
+  }
+}
+
+async function extractPdfText(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    let line = '';
+    for (const item of content.items) {
+      line += item.str;
+      if (item.hasEOL) {
+        fullText += line + '\n';
+        line = '';
+      } else {
+        line += ' ';
+      }
+    }
+    fullText += line + '\n';
+  }
+
+  return cleanText(fullText);
+}
+
+function cleanText(raw) {
+  return raw
+    .replace(/-\s+\n?/g, '')          // rejoin words broken across a line wrap
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .replace(/ ?\n ?/g, ' ')
+    .replace(/ {2,}/g, ' ')
+    .trim();
+}
+
+function splitSentences(text) {
+  const raw = text.match(/[^.!?]+[.!?]+(?=\s|$)/g) || [];
+  const seen = new Set();
+  const result = [];
+
+  for (let s of raw) {
+    s = s.trim().replace(/\s{2,}/g, ' ');
+    if (s.length < MIN_SENTENCE_LEN || s.length > MAX_SENTENCE_LEN) continue;
+    const letters = (s.match(/[a-zA-Z]/g) || []).length;
+    if (letters / s.length < 0.6) continue;      // filter out tables/numbers/garbled text
+    if (seen.has(s)) continue;
+    seen.add(s);
+    result.push(s);
+  }
+
+  return result;
+}
+
+function splitChunks(text) {
+  const words = text.replace(/\s+/g, ' ').trim().split(' ');
+  const chunks = [];
+  let cur = '';
+
+  for (const w of words) {
+    if (!/[a-zA-Z]/.test(w)) continue;
+    if ((cur + ' ' + w).trim().length > CHUNK_LEN && cur) {
+      chunks.push(cur.trim());
+      cur = w;
+    } else {
+      cur = (cur + ' ' + w).trim();
+    }
+  }
+  if (cur.trim().length >= MIN_SENTENCE_LEN) chunks.push(cur.trim());
+
+  return chunks;
+}
+
+// ---------- Library screen ----------
+
+function renderLibrary() {
+  const list = document.getElementById('docList');
+  const empty = document.getElementById('emptyMsg');
+  list.innerHTML = '';
+
+  if (docs.length === 0) {
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+
+  for (const doc of docs) {
+    const li = document.createElement('li');
+    li.className = 'doc-item';
+    const date = new Date(doc.addedAt);
+    const dateStr = `${date.getFullYear()}.${String(date.getMonth()+1).padStart(2,'0')}.${String(date.getDate()).padStart(2,'0')}`;
+    li.innerHTML = `
+      <div class="doc-info">
+        <div class="doc-name">${escapeHtml(doc.name)}</div>
+        <div class="doc-meta">${dateStr} · 문장 ${doc.sentences.length}개</div>
+      </div>
+      <div class="doc-actions">
+        <button class="btn btn-primary" data-action="practice">연습하기</button>
+        <button class="btn btn-danger" data-action="delete">삭제</button>
+      </div>
+    `;
+    li.querySelector('[data-action="practice"]').addEventListener('click', () => openSetup(doc.id));
+    li.querySelector('[data-action="delete"]').addEventListener('click', () => deleteDoc(doc.id));
+    list.appendChild(li);
+  }
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function deleteDoc(id) {
+  if (!confirm('이 자료를 삭제할까요?')) return;
+  docs = docs.filter(d => d.id !== id);
+  saveDocs();
+  renderLibrary();
+}
+
+// ---------- Setup screen ----------
+
+function openSetup(id) {
+  currentDoc = docs.find(d => d.id === id);
+  if (!currentDoc) return;
+
+  document.getElementById('setupDocName').textContent = currentDoc.name;
+  document.getElementById('setupDocMeta').textContent = `문장 ${currentDoc.sentences.length}개 · 전체 ${currentDoc.text.length.toLocaleString()}자`;
+
+  document.querySelectorAll('.mode-option').forEach(el => el.classList.remove('selected'));
+  document.querySelector('.mode-option[data-mode="sentence"]').classList.add('selected');
+  document.querySelector('input[name="mode"][value="sentence"]').checked = true;
+  document.getElementById('shuffleCheck').checked = false;
+
+  showScreen('screenSetup');
+}
+
+document.querySelectorAll('.mode-option').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    el.querySelector('input').checked = true;
+  });
+});
+
+function goToLibrary() {
+  showScreen('screenLibrary');
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ---------- Practice screen ----------
+
+function startPractice() {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const shuffleOn = document.getElementById('shuffleCheck').checked;
+
+  items = mode === 'sentence' ? currentDoc.sentences.slice() : splitChunks(currentDoc.text);
+  if (shuffleOn) items = shuffle(items);
+
+  if (items.length === 0) {
+    alert('연습할 내용이 없어요.');
+    return;
+  }
+
+  itemIndex = 0;
+  sessionCount = 0;
+  sessionCorrectChars = 0;
+  sessionTypedChars = 0;
+
+  showScreen('screenPractice');
+  loadItem();
+}
+
+function loadItem() {
+  const target = items[itemIndex];
+  prevInputValue = '';
+  startTime = null;
+  clearInterval(timerInterval);
+  document.getElementById('statTime').textContent = '0:00';
+  document.getElementById('statWpm').textContent = '0';
+
+  const input = document.getElementById('typeInput');
+  input.value = '';
+  input.classList.remove('done');
+  input.disabled = false;
+  renderTarget(target, '');
+  document.getElementById('statProgress').textContent = `${itemIndex + 1}/${items.length}`;
+  document.getElementById('progressFill').style.width = `${(itemIndex / items.length) * 100}%`;
+
+  input.focus();
+}
+
+function renderTarget(target, typed) {
+  const el = document.getElementById('targetText');
+  let html = '';
+  for (let i = 0; i < target.length; i++) {
+    const ch = target[i];
+    const display = ch === ' ' ? '&nbsp;' : escapeHtml(ch);
+    let cls = 'ch';
+    if (ch === ' ') cls += ' space';
+    if (i < typed.length) {
+      cls += typed[i] === ch ? ' correct' : ' incorrect';
+    } else if (i === typed.length) {
+      cls += ' current';
+    }
+    html += `<span class="${cls}">${display}</span>`;
+  }
+  el.innerHTML = html;
+}
+
+const typeInput = document.getElementById('typeInput');
+typeInput.addEventListener('input', onTypeInput);
+typeInput.addEventListener('paste', (e) => e.preventDefault());
+
+function onTypeInput(e) {
+  const target = items[itemIndex];
+  let value = typeInput.value;
+
+  if (value.length > target.length) {
+    value = value.slice(0, target.length);
+    typeInput.value = value;
+  }
+
+  if (startTime === null && value.length > 0) {
+    startTime = Date.now();
+    timerInterval = setInterval(updateTimerStats, 200);
+  }
+
+  // count newly typed characters (not deletions) toward accuracy
+  if (value.length > prevInputValue.length) {
+    for (let i = prevInputValue.length; i < value.length; i++) {
+      sessionTypedChars++;
+      if (value[i] === target[i]) sessionCorrectChars++;
+    }
+  }
+  prevInputValue = value;
+
+  renderTarget(target, value);
+  updateTimerStats();
+
+  if (value.length === target.length) {
+    finishItem();
+  }
+}
+
+function updateTimerStats() {
+  if (startTime === null) return;
+  const elapsedMs = Date.now() - startTime;
+  const elapsedSec = Math.max(elapsedMs / 1000, 0.001);
+  const minutes = elapsedSec / 60;
+
+  const wpm = Math.round((sessionCorrectChars / 5) / Math.max(minutes, 1/60));
+  const acc = sessionTypedChars === 0 ? 100 : Math.round((sessionCorrectChars / sessionTypedChars) * 100);
+
+  document.getElementById('statWpm').textContent = wpm;
+  document.getElementById('statAcc').textContent = acc + '%';
+
+  const m = Math.floor(elapsedSec / 60);
+  const s = Math.floor(elapsedSec % 60);
+  document.getElementById('statTime').textContent = `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function finishItem() {
+  clearInterval(timerInterval);
+  typeInput.disabled = true;
+  typeInput.classList.add('done');
+  sessionCount++;
+
+  setTimeout(() => {
+    if (itemIndex + 1 >= items.length) {
+      showResult(true);
+    } else {
+      itemIndex++;
+      loadItem();
+    }
+  }, 500);
+}
+
+function skipItem() {
+  clearInterval(timerInterval);
+  if (itemIndex + 1 >= items.length) {
+    showResult(false);
+  } else {
+    itemIndex++;
+    loadItem();
+  }
+}
+
+function quitPractice() {
+  clearInterval(timerInterval);
+  showResult(false);
+}
+
+// ---------- Result modal ----------
+
+function showResult(completedAll) {
+  document.getElementById('resultTitle').textContent = completedAll ? '연습 완료!' : '연습을 종료했어요';
+
+  const acc = sessionTypedChars === 0 ? 100 : Math.round((sessionCorrectChars / sessionTypedChars) * 100);
+  const wpmEl = document.getElementById('statWpm').textContent;
+
+  document.getElementById('resultWpm').textContent = wpmEl;
+  document.getElementById('resultAcc').textContent = acc + '%';
+  document.getElementById('resultCount').textContent = `${sessionCount}/${items.length}`;
+
+  document.getElementById('resultModal').classList.remove('hidden');
+}
+
+function closeModalToLibrary() {
+  document.getElementById('resultModal').classList.add('hidden');
+  goToLibrary();
+}
+
+function closeModalRestart() {
+  document.getElementById('resultModal').classList.add('hidden');
+  showScreen('screenSetup');
+}
+
+// ---------- Screen switching ----------
+
+function showScreen(id) {
+  ['screenLibrary', 'screenSetup', 'screenPractice'].forEach(s => {
+    document.getElementById(s).classList.toggle('hidden', s !== id);
+  });
+}
+
+// ---------- Init ----------
+
+window.goToLibrary = goToLibrary;
+window.startPractice = startPractice;
+window.skipItem = skipItem;
+window.quitPractice = quitPractice;
+window.closeModalToLibrary = closeModalToLibrary;
+window.closeModalRestart = closeModalRestart;
+
+renderLibrary();
+</script>
+</body>
+</html>
